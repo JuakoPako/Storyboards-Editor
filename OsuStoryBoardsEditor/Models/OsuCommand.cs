@@ -13,6 +13,21 @@
 
         public string? Parameter { get; set; }
 
+        public static readonly string[] EasingNames =
+        {
+            "Linear", "Out", "In",
+            "Quad In", "Quad Out", "Quad In/Out",
+            "Cubic In", "Cubic Out", "Cubic In/Out",
+            "Quart In", "Quart Out", "Quart In/Out",
+            "Quint In", "Quint Out", "Quint In/Out",
+            "Sine In", "Sine Out", "Sine In/Out",
+            "Expo In", "Expo Out", "Expo In/Out",
+            "Circ In", "Circ Out", "Circ In/Out",
+            "Elastic In", "Elastic Out", "ElasticHalf Out", "ElasticQuarter Out", "Elastic In/Out",
+            "Back In", "Back Out", "Back In/Out",
+            "Bounce In", "Bounce Out", "Bounce In/Out"
+        };
+
         public OsuCommand Clone() => new()
         {
             Type = Type,

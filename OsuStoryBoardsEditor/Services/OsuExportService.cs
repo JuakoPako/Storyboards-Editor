@@ -1,5 +1,6 @@
 ﻿using OsuStoryBoardsEditor.Models;
 using System.IO;
+using System.Globalization;
 
 namespace OsuStoryBoardsEditor.Services
 {
@@ -7,12 +8,36 @@ namespace OsuStoryBoardsEditor.Services
     {
         public void Export(StoryboardProject project, string outputFolder)
         {
+            // El formato .osb exige punto decimal: forzamos InvariantCulture durante la exportación
+            var prev = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+                ExportInternal(project, outputFolder);
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = prev;
+            }
+        }
+
+        private void ExportInternal(StoryboardProject project, string outputFolder)
+        {
             Directory.CreateDirectory(outputFolder);
 
+            var copied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var sprite in project.Sprites)
             {
                 if (!File.Exists(sprite.FilePath)) continue;
                 var destFile = Path.Combine(outputFolder, Path.GetFileName(sprite.FilePath));
+
+                // Si la imagen ya está en la carpeta de salida, no hay nada que copiar
+                if (string.Equals(Path.GetFullPath(sprite.FilePath), Path.GetFullPath(destFile),
+                                  StringComparison.OrdinalIgnoreCase)) continue;
+
+                // Varios sprites pueden usar la misma imagen: se copia una sola vez
+                if (!copied.Add(destFile)) continue;
+
                 File.Copy(sprite.FilePath, destFile, overwrite: true);
             }
 

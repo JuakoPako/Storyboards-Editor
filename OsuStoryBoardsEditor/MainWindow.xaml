@@ -270,7 +270,8 @@
                 PaintSurface="OsuCanvas_PaintSurface"
                 MouseLeftButtonDown="Canvas_MouseDown"
                 MouseMove="Canvas_MouseMove"
-                MouseLeftButtonUp="Canvas_MouseUp"/>
+                MouseLeftButtonUp="Canvas_MouseUp"
+                MouseRightButtonDown="Canvas_MouseRightButtonDown"/>
                             <TextBlock Text="854 × 480 (storyboard)" Foreground="#1E1E28"
                            FontSize="10" HorizontalAlignment="Right"
                            VerticalAlignment="Bottom" Margin="0,0,6,4"/>

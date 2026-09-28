@@ -50,6 +50,16 @@
                                 Cursor="Hand"
                                 MouseLeftButtonUp="Layer_Click"
                                 Loaded="ItemBorder_Loaded">
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Duplicar" Click="CtxDuplicate_Click"/>
+                                    <MenuItem Header="Eliminar" Click="CtxDelete_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="Efectos">
+                                        <MenuItem Header="Loop al ritmo..." Click="CtxBeatLoop_Click"/>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </Border.ContextMenu>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="22"/>

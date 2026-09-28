@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -43,6 +44,11 @@ namespace OsuStoryBoardsEditor
         private double _handleDragStartScale;
         private double _handleDragStartRot;
         private SKPoint _handleDragStartPt;
+        private double _handleDragStartAngle;
+        private OsuCommand? _handleDragCmdS;
+        private double _handleDragCmdSStart, _handleDragCmdSEnd;
+        private OsuCommand? _handleDragCmdR;
+        private double _handleDragCmdRStart, _handleDragCmdREnd;
 
         private const float StoryboardXOffset = 107f;
 
@@ -52,6 +58,10 @@ namespace OsuStoryBoardsEditor
         private double _dragStartSpriteX, _dragStartSpriteY;
         private UndoRedoManager.Transaction? _dragTx;   // paso de undo abierto mientras dura el drag
 
+        private OsuSprite? _pendingSprite;
+        private int _pendingMs;
+        private readonly Dictionary<string, double> _pending = new();
+
         public MainWindow()
         {
             InitializeComponent();
@@ -59,6 +69,21 @@ namespace OsuStoryBoardsEditor
             LayerPanel.DataContext = _project;
             LayerPanel.SpriteSelected += OnSpriteSelected;
             LayerPanel.AddLayerRequested += OpenImageDialog;
+            LayerPanel.DuplicateRequested += sprite =>
+            {
+                OnSpriteSelected(sprite);
+                PasteSprite(sprite, atPlayhead: false);
+            };
+            LayerPanel.DeleteRequested += sprite =>
+            {
+                OnSpriteSelected(sprite);
+                DeleteSelectedSprite();
+            };
+            LayerPanel.BeatLoopRequested += sprite =>
+            {
+                OnSpriteSelected(sprite);
+                OpenBeatLoopDialog(sprite);
+            };
             Timeline.SpriteSelected += OnSpriteSelected;
 
             // ── Undo/redo global ──
@@ -105,6 +130,28 @@ namespace OsuStoryBoardsEditor
             };
 
             TxtCurrentTime.Text = "00:00.000";
+        }
+
+        private static bool SetValueAtKeyframe(OsuSprite sprite, CommandType type, int index, int t, double typed)
+        {
+            bool any = false;
+            foreach (var c in sprite.Commands)
+            {
+                if (c.Type != type) continue;
+                if (c.StartTime == t && index < c.StartValues.Length) { c.StartValues[index] = typed; any = true; }
+                if (c.EndTime == t && index < c.EndValues.Length) { c.EndValues[index] = typed; any = true; }
+            }
+            return any;
+        }
+
+        private bool ApplyPanelValue(OsuSprite sprite, CommandType type, int index, string key, double typed)
+        {
+            if (!sprite.Commands.Any(c => c.Type == type)) return false;   // sin keyframes: propiedad base, como antes
+            int t = (int)Math.Round(CurrentMs);
+            if (SetValueAtKeyframe(sprite, type, index, t, typed)) return true;   // justo sobre un keyframe: edita ese
+            if (_pendingSprite != sprite || _pendingMs != t) { _pending.Clear(); _pendingSprite = sprite; _pendingMs = t; }
+            _pending[key] = typed;   // entre keyframes: no toca nada existente
+            return true;
         }
 
         // ── RENDER PRINCIPAL ──────────────────────────────
@@ -332,8 +379,26 @@ namespace OsuStoryBoardsEditor
                 if (_activeHandle == TransformHandle.Rotate)
                 {
                     double angle = Math.Atan2(pt.Y - state.y, pt.X - state.x);
-                    sprite.Rotation = angle;
-                    PropRot.Text = (angle * 180 / Math.PI).ToString("F2") + "°";
+                    double delta = angle - _handleDragStartAngle;
+
+                    if (_handleDragCmdR != null)
+                    {
+                        if (ms <= _handleDragCmdR.StartTime)
+                            _handleDragCmdR.StartValues[0] = _handleDragCmdRStart + delta;
+                        else if (ms >= _handleDragCmdR.EndTime)
+                            _handleDragCmdR.EndValues[0] = _handleDragCmdREnd + delta;
+                        else
+                        {
+                            _handleDragCmdR.StartValues[0] = _handleDragCmdRStart + delta;
+                            _handleDragCmdR.EndValues[0] = _handleDragCmdREnd + delta;
+                        }
+                        PropRot.Text = (GetSpriteStateAt(sprite, ms).rot * 180 / Math.PI).ToString("F2") + "°";
+                    }
+                    else
+                    {
+                        sprite.Rotation = _handleDragStartRot + delta;
+                        PropRot.Text = (sprite.Rotation * 180 / Math.PI).ToString("F2") + "°";
+                    }
                 }
                 else
                 {
@@ -341,8 +406,26 @@ namespace OsuStoryBoardsEditor
                     double distOrig = Math.Sqrt(Math.Pow(_handleDragStartPt.X - state.x, 2) + Math.Pow(_handleDragStartPt.Y - state.y, 2));
                     if (distOrig > 0)
                     {
-                        sprite.Scale = Math.Max(0.01, _handleDragStartScale * (dist / distOrig));
-                        PropScale.Text = sprite.Scale.ToString("F2");
+                        double ratio = dist / distOrig;
+
+                        if (_handleDragCmdS != null)
+                        {
+                            if (ms <= _handleDragCmdS.StartTime)
+                                _handleDragCmdS.StartValues[0] = Math.Max(0.01, _handleDragCmdSStart * ratio);
+                            else if (ms >= _handleDragCmdS.EndTime)
+                                _handleDragCmdS.EndValues[0] = Math.Max(0.01, _handleDragCmdSEnd * ratio);
+                            else
+                            {
+                                _handleDragCmdS.StartValues[0] = Math.Max(0.01, _handleDragCmdSStart * ratio);
+                                _handleDragCmdS.EndValues[0] = Math.Max(0.01, _handleDragCmdSEnd * ratio);
+                            }
+                            PropScale.Text = GetSpriteStateAt(sprite, ms).scaleX.ToString("F2");
+                        }
+                        else
+                        {
+                            sprite.Scale = Math.Max(0.01, _handleDragStartScale * ratio);
+                            PropScale.Text = sprite.Scale.ToString("F2");
+                        }
                     }
                 }
 
@@ -405,8 +488,26 @@ namespace OsuStoryBoardsEditor
                         _project.SelectedSprite);
                     _activeHandle = handle;
                     _handleDragStartPt = pt;
-                    _handleDragStartScale = _project.SelectedSprite.Scale;
-                    _handleDragStartRot = _project.SelectedSprite.Rotation;
+
+                    var state = GetSpriteStateAt(_project.SelectedSprite, ms);
+                    _handleDragStartAngle = Math.Atan2(pt.Y - state.y, pt.X - state.x);
+                    _handleDragStartScale = state.scaleX;
+                    _handleDragStartRot = state.rot;
+
+                    _handleDragCmdS = GetActiveOrLastCommand(_project.SelectedSprite, CommandType.S, ms);
+                    if (_handleDragCmdS != null)
+                    {
+                        _handleDragCmdSStart = _handleDragCmdS.StartValues[0];
+                        _handleDragCmdSEnd = _handleDragCmdS.EndValues[0];
+                    }
+
+                    _handleDragCmdR = GetActiveOrLastCommand(_project.SelectedSprite, CommandType.R, ms);
+                    if (_handleDragCmdR != null)
+                    {
+                        _handleDragCmdRStart = _handleDragCmdR.StartValues[0];
+                        _handleDragCmdREnd = _handleDragCmdR.EndValues[0];
+                    }
+
                     OsuCanvas.CaptureMouse();
                     e.Handled = true;
                     return;
@@ -453,6 +554,37 @@ namespace OsuStoryBoardsEditor
 
             _draggingSprite = null;
             OsuCanvas.ReleaseMouseCapture();
+        }
+
+        private void Canvas_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var pt = WpfToCanvas(e.GetPosition(OsuCanvas));
+            var sprite = HitTest(pt);
+            if (sprite == null) return;
+
+            OnSpriteSelected(sprite);
+
+            var menu = new ContextMenu();
+
+            var miDup = new MenuItem { Header = "Duplicar" };
+            miDup.Click += (_, __) => PasteSprite(sprite, atPlayhead: false);
+            menu.Items.Add(miDup);
+
+            var miDel = new MenuItem { Header = "Eliminar" };
+            miDel.Click += (_, __) => DeleteSelectedSprite();
+            menu.Items.Add(miDel);
+
+            menu.Items.Add(new Separator());
+
+            var miEfectos = new MenuItem { Header = "Efectos" };
+            var miLoop = new MenuItem { Header = "Loop al ritmo..." };
+            miLoop.Click += (_, __) => OpenBeatLoopDialog(sprite);
+            miEfectos.Items.Add(miLoop);
+            menu.Items.Add(miEfectos);
+
+            menu.PlacementTarget = OsuCanvas;
+            menu.IsOpen = true;
+            e.Handled = true;
         }
 
         private TransformHandle GetHandleAt(SKPoint pt, OsuSprite sprite, SKBitmap bmp, double ms)
@@ -809,6 +941,8 @@ namespace OsuStoryBoardsEditor
             sprite.StartTime = Math.Min(sprite.StartTime, sprite.Commands.Min(c => c.StartTime));
             if (sprite.EndTime <= sprite.StartTime) sprite.EndTime = sprite.StartTime + 1000;
 
+            _pending.Clear(); _pendingSprite = null;
+
             Timeline.RedrawTracks(_project.Sprites);
             RefreshPropertiesPanel(sprite);
             TxtProjectName.Text = $"keyframe → [{sprite.Name}] @ {t} ms";
@@ -878,6 +1012,56 @@ namespace OsuStoryBoardsEditor
                 PasteSprite(_project.SelectedSprite, atPlayhead: false);
                 e.Handled = true;
             }
+            else if (ctrl && e.Key == Key.L && !typing && _project.SelectedSprite != null)
+            {
+                TestBeatLoop();
+                e.Handled = true;
+            }
+        }
+
+        // ── Loop al ritmo (prueba) ─────────────────────────
+        private void TestBeatLoop()
+        {
+            var sprite = _project.SelectedSprite;
+            if (sprite == null) return;
+
+            var service = new BeatLoopService();
+            var loops = service.GenerateScalePulse(sprite, _project.TimingPoints, sprite.StartTime, sprite.EndTime);
+
+            if (loops.Count == 0)
+            {
+                TxtProjectName.Text = "Sin timing points: no se generó ningún loop";
+                return;
+            }
+
+            using (_undoRedo.BeginTransaction("Loop al ritmo (prueba)", sprite))
+                sprite.Loops.AddRange(loops);
+
+            RefreshPropertiesPanel(sprite);
+            OsuCanvas.InvalidateVisual();
+            TxtProjectName.Text = $"Generados {loops.Count} loops al ritmo  (Ctrl+Z para deshacer)";
+        }
+
+        private void OpenBeatLoopDialog(OsuSprite sprite)
+        {
+            var dlg = new BeatLoopWindow(sprite) { Owner = this };
+            if (dlg.ShowDialog() != true) return;
+
+            var service = new BeatLoopService();
+            var loops = service.Generate(sprite, _project.TimingPoints, dlg.Options);
+
+            if (loops.Count == 0)
+            {
+                TxtProjectName.Text = "Sin timing points en ese rango: no se generó ningún loop";
+                return;
+            }
+
+            using (_undoRedo.BeginTransaction("Loop al ritmo", sprite))
+                sprite.Loops.AddRange(loops);
+
+            RefreshPropertiesPanel(sprite);
+            OsuCanvas.InvalidateVisual();
+            TxtProjectName.Text = $"Generados {loops.Count} loops al ritmo  (Ctrl+Z para deshacer)";
         }
 
         // ── Drag & Drop de archivos ───────────────────────
@@ -911,7 +1095,7 @@ namespace OsuStoryBoardsEditor
             if (PanelValueUnchanged(v, current, 0.5)) return;
             using (_undoRedo.BeginTransaction("Editar X", sprite))
             {
-                if (!TryApplyToCommand(sprite, CommandType.M, 0, v, current))
+                if (!ApplyPanelValue(sprite, CommandType.M, 0, "x", v))
                     sprite.X = v;
             }
             OsuCanvas.InvalidateVisual();
@@ -927,7 +1111,7 @@ namespace OsuStoryBoardsEditor
             if (PanelValueUnchanged(v, current, 0.5)) return;
             using (_undoRedo.BeginTransaction("Editar Y", sprite))
             {
-                if (!TryApplyToCommand(sprite, CommandType.M, 1, v, current))
+                if (!ApplyPanelValue(sprite, CommandType.M, 1, "y", v))
                     sprite.Y = v;
             }
             OsuCanvas.InvalidateVisual();
@@ -944,7 +1128,7 @@ namespace OsuStoryBoardsEditor
             if (PanelValueUnchanged(v, current, 0.005)) return;
             using (_undoRedo.BeginTransaction("Editar escala", sprite))
             {
-                if (!TryApplyToCommand(sprite, CommandType.S, 0, v, current))
+                if (!ApplyPanelValue(sprite, CommandType.S, 0, "scale", v))
                     sprite.Scale = v;
             }
             OsuCanvas.InvalidateVisual();
@@ -961,7 +1145,7 @@ namespace OsuStoryBoardsEditor
             double rad = deg * Math.PI / 180;
             using (_undoRedo.BeginTransaction("Editar rotación", sprite))
             {
-                if (!TryApplyToCommand(sprite, CommandType.R, 0, rad, current))
+                if (!ApplyPanelValue(sprite, CommandType.R, 0, "rot", rad))
                     sprite.Rotation = rad;
             }
             OsuCanvas.InvalidateVisual();
@@ -978,7 +1162,7 @@ namespace OsuStoryBoardsEditor
             if (PanelValueUnchanged(v, current, 0.005)) return;
             using (_undoRedo.BeginTransaction("Editar opacidad", sprite))
             {
-                if (!TryApplyToCommand(sprite, CommandType.F, 0, v, current))
+                if (!ApplyPanelValue(sprite, CommandType.F, 0, "opacity", v))
                     sprite.Opacity = v;
             }
             OsuCanvas.InvalidateVisual();
@@ -1122,6 +1306,15 @@ namespace OsuStoryBoardsEditor
                 opacity *= (r * 0.299 + g * 0.587 + b * 0.114) / 255.0;
             }
 
+            if (_pendingSprite == sprite && Math.Abs(ms - _pendingMs) < 1)
+            {
+                if (_pending.TryGetValue("x", out var px)) x = px;
+                if (_pending.TryGetValue("y", out var py)) y = py;
+                if (_pending.TryGetValue("scale", out var ps)) { scaleX = ps; scaleY = ps; }
+                if (_pending.TryGetValue("rot", out var pr)) rot = pr;
+                if (_pending.TryGetValue("opacity", out var po)) opacity = po;
+            }
+
             return (x, y, scaleX, scaleY, rot, opacity);
         }
 
@@ -1230,6 +1423,7 @@ namespace OsuStoryBoardsEditor
             double max = _project.TotalDuration > 0 ? _project.TotalDuration : double.MaxValue;
             ms = Math.Clamp(ms, 0, max);
             _currentMs = ms;
+            _pending.Clear(); _pendingSprite = null;
             _audioPlayer.Position = TimeSpan.FromMilliseconds(ms);
             TxtCurrentTime.Text = TimeSpan.FromMilliseconds(ms).ToString(@"mm\:ss\.fff");
             if (updatePlayhead) Timeline.UpdatePlayhead(ms);
@@ -1404,6 +1598,7 @@ namespace OsuStoryBoardsEditor
             const double c2 = c1 * 1.525;
             const double c3 = c1 + 1;
             const double c4 = (2 * Math.PI) / 3;
+            const double c5 = (2 * Math.PI) / 4.5;
 
             switch (easing)
             {
@@ -1462,21 +1657,29 @@ namespace OsuStoryBoardsEditor
                     if (t == 1) return 1;
                     return Math.Pow(2, -10 * t) * Math.Sin((t * 10 - 0.75) * c4 * 0.25) + 1;
 
-                case 28: return c3 * t * t * t - c1 * t * t;                           // InBack
-                case 29: return 1 + c3 * Math.Pow(t - 1, 3) + c1 * Math.Pow(t - 1, 2); // OutBack
-                case 30:                                                              // InOutBack
+                case 28:                                                    // InOutElastic
+                    if (t == 0) return 0;
+                    if (t == 1) return 1;
+                    return t < 0.5
+                        ? -(Math.Pow(2, 20 * t - 10) * Math.Sin((20 * t - 11.125) * c5)) / 2
+                        : (Math.Pow(2, -20 * t + 10) * Math.Sin((20 * t - 11.125) * c5)) / 2 + 1;
+
+
+                case 29: return c3 * t * t * t - c1 * t * t;                           // InBack
+                case 30: return 1 + c3 * Math.Pow(t - 1, 3) + c1 * Math.Pow(t - 1, 2); // OutBack
+                case 31:                                                              // InOutBack
                     return t < 0.5
                         ? (Math.Pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
                         : (Math.Pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2;
 
-                case 31: return 1 - OutBounce(1 - t);                                  // InBounce
-                case 32: return OutBounce(t);                                         // OutBounce
-                case 33:                                                              // InOutBounce
+                case 32: return 1 - OutBounce(1 - t);                                  // InBounce
+                case 33: return OutBounce(t);                                         // OutBounce
+                case 34:                                                              // InOutBounce
                     return t < 0.5
                         ? (1 - OutBounce(1 - 2 * t)) / 2
                         : (1 + OutBounce(2 * t - 1)) / 2;
 
-                case 34: return t == 0 ? 0 : Math.Pow(2, 10 * (t - 1));                // OutPow10 (aproximado)
+                // OutPow10 (aproximado)
 
                 default: return t; // easing desconocido → fallback a linear
             }

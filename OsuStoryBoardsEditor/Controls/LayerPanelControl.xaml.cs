@@ -44,6 +44,29 @@ namespace OsuStoryBoardsEditor.Controls
 
         public event Action? AddLayerRequested;
 
+        // ── Menú clic derecho ──────────────────────────────
+        public event Action<OsuSprite>? DuplicateRequested;
+        public event Action<OsuSprite>? DeleteRequested;
+        public event Action<OsuSprite>? BeatLoopRequested;
+
+        private void CtxDuplicate_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is OsuSprite sprite)
+                DuplicateRequested?.Invoke(sprite);
+        }
+
+        private void CtxDelete_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is OsuSprite sprite)
+                DeleteRequested?.Invoke(sprite);
+        }
+
+        private void CtxBeatLoop_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is OsuSprite sprite)
+                BeatLoopRequested?.Invoke(sprite);
+        }
+
         // ── Undo/redo global ──
         private UndoRedoManager? _undo;
         public void SetUndoManager(UndoRedoManager undo) => _undo = undo;

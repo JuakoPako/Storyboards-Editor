@@ -546,6 +546,27 @@ namespace OsuStoryBoardsEditor.Controls
                 Margin = new Thickness(10, 4, 10, 10)
             };
 
+            var outgoing = cmds.Where(c => c.StartTime == timeMs).ToList();
+            ComboBox? cbEasing = null;
+            if (outgoing.Count > 0)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = "Easing → siguiente keyframe",
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x99)),
+                    FontSize = 10,
+                    Margin = new Thickness(10, 4, 10, 2)
+                });
+                cbEasing = new ComboBox
+                {
+                    ItemsSource = OsuCommand.EasingNames,
+                    SelectedIndex = Math.Clamp(outgoing[0].Easing, 0, OsuCommand.EasingNames.Length - 1),
+                    FontSize = 10,
+                    Margin = new Thickness(10, 0, 10, 4)
+                };
+                panel.Children.Add(cbEasing);
+            }
+
             var btnDelete = new Button
             {
                 Content = "Eliminar",
@@ -612,6 +633,8 @@ namespace OsuStoryBoardsEditor.Controls
                     (isStartR ? cmdR.StartValues : cmdR.EndValues)[0] = nr;
                 if (cmdF != null && tbOpacity != null && double.TryParse(tbOpacity.Text, out double nf))
                     (isStartF ? cmdF.StartValues : cmdF.EndValues)[0] = Math.Clamp(nf, 0, 1);
+                if (cbEasing != null)
+                    foreach (var c in outgoing) c.Easing = cbEasing.SelectedIndex;
 
                 _kfPopup!.IsOpen = false;
                 if (_project != null) RedrawTracks(_project.Sprites);

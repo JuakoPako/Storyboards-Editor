@@ -1,0 +1,79 @@
+﻿<Window x:Class="OsuStoryBoardsEditor.BeatLoopWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Loop al ritmo" Width="340" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <StackPanel Margin="14">
+
+        <TextBlock Text="Efecto" FontWeight="SemiBold"/>
+        <ComboBox x:Name="CmbType" Margin="0,4,0,10" SelectionChanged="CmbType_SelectionChanged">
+            <ComboBoxItem Content="Pulso de escala"/>
+            <ComboBoxItem Content="Movimiento con wrap"/>
+            <ComboBoxItem Content="Saltos al ritmo"/>
+        </ComboBox>
+
+        <StackPanel x:Name="PanelPulse">
+            <TextBlock Text="Intensidad (%)"/>
+            <TextBox x:Name="TxtIntensity" Text="15" Margin="0,2,0,8"/>
+            <TextBlock Text="Easing entrada"/>
+            <ComboBox x:Name="CmbEasingIn" Margin="0,2,0,8"/>
+            <TextBlock Text="Easing salida"/>
+            <ComboBox x:Name="CmbEasingOut" Margin="0,2,0,8"/>
+        </StackPanel>
+
+        <StackPanel x:Name="PanelWrap" Visibility="Collapsed">
+            <TextBlock Text="Eje"/>
+            <ComboBox x:Name="CmbAxis" Margin="0,2,0,8" SelectedIndex="0">
+                <ComboBoxItem Content="Horizontal"/>
+                <ComboBoxItem Content="Vertical"/>
+            </ComboBox>
+            <CheckBox x:Name="ChkReverse" Content="Invertir dirección" Margin="0,0,0,8"/>
+            <TextBlock Text="Beats por cruce"/>
+            <TextBox x:Name="TxtBeats" Text="4" Margin="0,2,0,8"/>
+            <TextBlock Text="Margen fuera de pantalla (px)"/>
+            <TextBox x:Name="TxtMargin" Text="100" Margin="0,2,0,8"/>
+            <TextBlock Text="Easing del movimiento"/>
+            <ComboBox x:Name="CmbMoveEasing" Margin="0,2,0,8"/>
+        </StackPanel>
+
+        <StackPanel x:Name="PanelStep" Visibility="Collapsed">
+            <TextBlock Text="Eje"/>
+            <ComboBox x:Name="CmbStepAxis" Margin="0,2,0,8" SelectedIndex="0">
+                <ComboBoxItem Content="Horizontal"/>
+                <ComboBoxItem Content="Vertical"/>
+            </ComboBox>
+            <CheckBox x:Name="ChkStepReverse" Content="Invertir dirección" Margin="0,0,0,8"/>
+            <TextBlock Text="Saltos para cruzar la pantalla"/>
+            <TextBox x:Name="TxtJumps" Text="8" Margin="0,2,0,8"/>
+            <TextBlock Text="Beats entre saltos (1 = cada beat, 4 = tiempo fuerte)"/>
+            <TextBox x:Name="TxtBeatsPerJump" Text="1" Margin="0,2,0,8"/>
+            <TextBlock Text="Duración del salto (% del intervalo)"/>
+            <TextBox x:Name="TxtJumpPct" Text="35" Margin="0,2,0,8"/>
+            <TextBlock Text="Margen fuera de pantalla (px)"/>
+            <TextBox x:Name="TxtStepMargin" Text="100" Margin="0,2,0,8"/>
+            <TextBlock Text="Easing del salto"/>
+            <ComboBox x:Name="CmbStepEasing" Margin="0,2,0,8"/>
+        </StackPanel>
+
+        <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Desde (ms)"/>
+                <TextBox x:Name="TxtFrom" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Hasta (ms)"/>
+                <TextBox x:Name="TxtTo" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Aceptar" Width="80" Margin="0,0,8,0" IsDefault="True" Click="BtnAccept_Click"/>
+            <Button Content="Cancelar" Width="80" IsCancel="True" Click="BtnCancel_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
