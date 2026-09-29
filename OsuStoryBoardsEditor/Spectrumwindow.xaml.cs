@@ -9,11 +9,13 @@ namespace OsuStoryBoardsEditor
     {
         public SpectrumBarsOptions Options { get; private set; } = new();
 
-        public SpectrumWindow(int totalMs)
+        public SpectrumWindow(int totalMs, int startMs = 0)
         {
             InitializeComponent();
-            TxtFrom.Text = "0";
-            TxtTo.Text = (totalMs > 0 ? totalMs : 30000).ToString();
+            int total = totalMs > 0 ? totalMs : 30000;
+            int from = Math.Clamp(startMs, 0, Math.Max(0, total - 1000));
+            TxtFrom.Text = from.ToString();
+            TxtTo.Text = Math.Min(total, from + 20000).ToString();   // 20 s por defecto, como sugiere el tip
         }
 
         private static double D(string s, double def) =>
@@ -33,12 +35,13 @@ namespace OsuStoryBoardsEditor
         {
             int from = Math.Max(0, (int)D(TxtFrom.Text, 0));
             int to = (int)D(TxtTo.Text, from + 20000);
-            if (to - from < 1000) { MessageBox.Show("El rango tiene que durar al menos 1 segundo."); return; }
+            if (ChkKiai.IsChecked != true && to - from < 1000) { MessageBox.Show("El rango tiene que durar al menos 1 segundo."); return; }
             if (!TryColor(TxtColor.Text, out var r, out var g, out var b))
             { MessageBox.Show("Color inválido. Usá el formato #RRGGBB."); return; }
 
             Options = new SpectrumBarsOptions
             {
+                KiaiOnly = ChkKiai.IsChecked == true,
                 RangeStart = from,
                 RangeEnd = to,
                 Bars = Math.Clamp((int)D(TxtBars.Text, 32), 2, 128),

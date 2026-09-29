@@ -21,12 +21,17 @@ namespace OsuStoryBoardsEditor.Services
                 var p = line.Split(',');
                 if (p.Length < 7) continue;
 
+
+                int fx = 0;
+                if (p.Length > 7) int.TryParse(p[7], out fx);
+
                 result.Add(new OsuTimingPoint
                 {
                     Time = (int)double.Parse(p[0], CultureInfo.InvariantCulture),
                     BeatLength = double.Parse(p[1], CultureInfo.InvariantCulture),
                     Meter = int.Parse(p[2]),
-                    Uninherited = p[6] == "1"
+                    Uninherited = p[6] == "1",
+                    Kiai = (fx & 1) != 0
                 });
             }
             return result;

@@ -155,7 +155,7 @@ namespace OsuStoryBoardsEditor.Services
 
             var layerStr = parts[1].Trim();
             var originStr = parts[2].Trim();
-            var filePath = parts[3].Trim().Trim('"').Replace("\\", Path.DirectorySeparatorChar.ToString());
+            var filePath = parts[3].Trim().Trim('"').Trim();
             var xStr = parts[4].Trim();
             var yStr = parts[5].Trim();
 
@@ -164,7 +164,7 @@ namespace OsuStoryBoardsEditor.Services
             if (!double.TryParse(yStr, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out double y)) y = 240;
 
-            var fullPath = Path.Combine(baseFolder, filePath);
+            var fullPath = ResolveAssetPath(baseFolder, filePath);
 
             return new OsuSprite
             {
@@ -288,5 +288,31 @@ namespace OsuStoryBoardsEditor.Services
             "BottomRight" => SpriteOrigin.BottomRight,
             _ => SpriteOrigin.Centre
         };
+
+        private static string ResolveAssetPath(string baseFolder, string raw)
+        {
+            string rel = raw.Trim().Trim('"').Trim()
+                .Replace('\\', Path.DirectorySeparatorChar)
+                .Replace('/', Path.DirectorySeparatorChar)
+                .TrimStart(Path.DirectorySeparatorChar);
+
+            string direct = Path.GetFullPath(Path.Combine(baseFolder, rel));
+            if (File.Exists(direct)) return direct;
+
+            // Fallback: busca por nombre ignorando mayúsculas dentro de la carpeta del mapa
+            try
+            {
+                var opts = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    MatchCasing = MatchCasing.CaseInsensitive
+                };
+                var found = Directory.EnumerateFiles(baseFolder, Path.GetFileName(rel), opts).FirstOrDefault();
+                if (found != null) return found;
+            }
+            catch { }
+
+            return direct;
+        }
     }
 }

@@ -13,5 +13,8 @@ namespace OsuStoryBoardsEditor.Models
         public double BeatLength { get; set; } // ms por beat (solo válido si Uninherited)
         public int Meter { get; set; }
         public bool Uninherited { get; set; }   // true = línea roja (define BPM), false = verde (SV)
+
+        public bool Kiai { get; set; }
+
     }
 }

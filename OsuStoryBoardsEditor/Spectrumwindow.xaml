@@ -5,6 +5,8 @@
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <StackPanel Margin="14">
 
+        <CheckBox x:Name="ChkKiai" Content="Solo durante los kiai (ignora Desde / Hasta)" Margin="0,0,0,10"/>
+
         <TextBlock Text="Rango de tiempo (ms)" FontWeight="SemiBold"/>
         <Grid Margin="0,4,0,10">
             <Grid.ColumnDefinitions>

@@ -33,7 +33,12 @@ namespace OsuStoryBoardsEditor
         private int _fps = 30;
         private string? _bgPath = null;
 
+        private bool _showBg = true;
+        private double _bgDim = 0.0;   // 0 = fondo normal, 1 = negro
+
         // Mapa de osu! con el que se está trabajando (para exportar directo a su carpeta)
+
+
         private BeatmapSetInfo? _currentMap = null;
 
         private DispatcherTimer? _audioOpenWatchdog;
@@ -175,9 +180,13 @@ namespace OsuStoryBoardsEditor
             double ms = CurrentMs;
 
             // ── Fondo (cover, igual que osu!) ──
-            if (_bgPath != null && _bitmapCache.TryGetValue(_bgPath, out var bgBmp))
+            if (_showBg && _bgPath != null && _bitmapCache.TryGetValue(_bgPath, out var bgBmp))
             {
-                using var bgPaint = new SKPaint { IsAntialias = false };
+                using var bgPaint = new SKPaint
+                {
+                    IsAntialias = false,
+                    Color = SKColors.White.WithAlpha((byte)Math.Round(255 * (1 - _bgDim)))
+                };
                 const float canvasW = 854f, canvasH = 480f;
                 float imgW = bgBmp.Width, imgH = bgBmp.Height;
                 float scale = Math.Max(canvasW / imgW, canvasH / imgH);
@@ -187,6 +196,8 @@ namespace OsuStoryBoardsEditor
                 float offY = (canvasH - drawH) / 2f;
                 canvas.DrawBitmap(bgBmp, new SKRect(offX, offY, offX + drawW, offY + drawH), bgPaint);
             }
+
+
 
             // ── Sprites ──
             foreach (var sprite in _project.Sprites)
@@ -213,11 +224,43 @@ namespace OsuStoryBoardsEditor
                 // Ahora reusamos _spritePaint y solo actualizamos sus propiedades.
                 _spritePaint.Color = SKColors.White.WithAlpha((byte)Math.Clamp(state.opacity * 255, 0, 255));
                 _spritePaint.BlendMode = additive ? SKBlendMode.Plus : SKBlendMode.SrcOver;
+                SKColorFilter? tint = null;
+                var cmdC = _resolved[(int)CommandType.C];
+                if (cmdC != null)
+                {
+                    double tc = ApplyEasing(Lerp01(ms, cmdC.StartTime, cmdC.EndTime), cmdC.Easing);
+                    double r, g, b;
+                    if (ms < cmdC.StartTime)
+                    {
+                        r = cmdC.StartValues[0]; g = cmdC.StartValues[1]; b = cmdC.StartValues[2];
+                    }
+                    else
+                    {
+                        r = Lerp(cmdC.StartValues[0], cmdC.EndValues[0], tc);
+                        g = Lerp(cmdC.StartValues[1], cmdC.EndValues[1], tc);
+                        b = Lerp(cmdC.StartValues[2], cmdC.EndValues[2], tc);
+                    }
+
+                    if (r < 254.5 || g < 254.5 || b < 254.5)   // 255,255,255 = sin tinte
+                        tint = SKColorFilter.CreateBlendMode(
+                            new SKColor((byte)Math.Clamp(Math.Round(r), 0, 255),
+                                        (byte)Math.Clamp(Math.Round(g), 0, 255),
+                                        (byte)Math.Clamp(Math.Round(b), 0, 255)),
+                            SKBlendMode.Modulate);
+                }
+                _spritePaint.ColorFilter = tint;
                 canvas.DrawBitmap(bmp,
                     new SKRect((float)-ox, (float)-oy,
                                (float)(absW - ox), (float)(absH - oy)),
                     _spritePaint);
+
+                _spritePaint.ColorFilter = null;
+                tint?.Dispose();
+
                 canvas.Restore();
+
+
+
             }
 
             // ── Guías ──
@@ -285,6 +328,18 @@ namespace OsuStoryBoardsEditor
             }
         }
 
+        private void ChkShowBg_Changed(object sender, RoutedEventArgs e)
+        {
+            _showBg = (sender as System.Windows.Controls.CheckBox)?.IsChecked == true;
+            OsuCanvas?.InvalidateVisual();
+        }
+
+        private void SldBgDim_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            _bgDim = e.NewValue;
+            OsuCanvas?.InvalidateVisual();
+        }
+
         // ── CARGAR BITMAP AL CACHE ────────────────────────
         private SKBitmap? LoadBitmap(string path)
         {
@@ -305,6 +360,12 @@ namespace OsuStoryBoardsEditor
             if (_timer == null) return;
             _fps = CmbFps.SelectedIndex == 1 ? 60 : 30;
             _timer.Interval = TimeSpan.FromMilliseconds(1000.0 / _fps);
+        }
+
+        private void SldVolume_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_audioPlayer == null) return;   // se dispara durante InitializeComponent
+            _audioPlayer.Volume = e.NewValue;
         }
 
         private void CmbBeatDivisor_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -578,11 +639,28 @@ namespace OsuStoryBoardsEditor
                 var miSpec = new MenuItem { Header = "Espectro de audio..." };
                 miSpec.Click += (_, __) => OpenSpectrumDialog();
                 bgMenu.Items.Add(miSpec);
+                bool hasSpec = _project.Sprites.Any(s => s.IsSpectrum);
+
+                var miCutBefore = new MenuItem { Header = "Cortar espectro antes del playhead", IsEnabled = hasSpec };
+                miCutBefore.Click += (_, __) => TrimSpectrum((int)Math.Round(CurrentMs), int.MaxValue);
+                bgMenu.Items.Add(miCutBefore);
+
+                var miCutAfter = new MenuItem { Header = "Cortar espectro después del playhead", IsEnabled = hasSpec };
+                miCutAfter.Click += (_, __) => TrimSpectrum(0, (int)Math.Round(CurrentMs));
+                bgMenu.Items.Add(miCutAfter);
+                var miBurst = new MenuItem { Header = "Explosión de partículas..." };
+                miBurst.Click += (_, __) => OpenParticlesDialog();
+                bgMenu.Items.Add(miBurst);
+
+                var miRays = new MenuItem { Header = "Rayos radiales..." };
+                miRays.Click += (_, __) => OpenRaysDialog();
+                bgMenu.Items.Add(miRays);
                 bgMenu.PlacementTarget = OsuCanvas;
                 bgMenu.IsOpen = true;
                 e.Handled = true;
                 return;
             }
+
 
             OnSpriteSelected(sprite);
             // ... el resto del método queda igual
@@ -634,6 +712,29 @@ namespace OsuStoryBoardsEditor
             menu.PlacementTarget = OsuCanvas;
             menu.IsOpen = true;
             e.Handled = true;
+        }
+
+        private void TrimSpectrum(int from, int to)
+        {
+            var bars = _project.Sprites.Where(s => s.IsSpectrum).ToList();
+            if (bars.Count == 0) return;
+
+            var toRemove = new List<OsuSprite>();
+            bool changed;
+            using (_undoRedo.BeginGroup("Cortar espectro"))
+            {
+                using (_undoRedo.BeginTransaction("Cortar espectro", bars.ToArray()))
+                    changed = SpectrumBarsService.Trim(bars, from, to, toRemove);
+
+                if (toRemove.Count > 0)
+                    _undoRedo.Execute(new RemoveSpritesCommand(_project, toRemove));
+            }
+
+            RefreshAfterHistory();
+            OsuCanvas.InvalidateVisual();
+            TxtProjectName.Text = changed
+                ? $"Espectro cortado: {bars.Where(b => !toRemove.Contains(b)).Sum(b => b.Commands.Count):N0} comandos  (Ctrl+Z para deshacer)"
+                : "El playhead está fuera del espectro: no se cortó nada";
         }
 
         private TransformHandle GetHandleAt(SKPoint pt, OsuSprite sprite, SKBitmap bmp, double ms)
@@ -1209,20 +1310,33 @@ namespace OsuStoryBoardsEditor
             if (string.IsNullOrEmpty(_project.AudioPath) || !File.Exists(_project.AudioPath))
             { MessageBox.Show("Arrastrá un archivo de audio (.mp3 / .ogg) primero."); return; }
 
-            var dlg = new SpectrumWindow(_project.TotalDuration) { Owner = this };
+            var dlg = new SpectrumWindow(_project.TotalDuration, (int)Math.Round(CurrentMs)) { Owner = this };
             if (dlg.ShowDialog() != true) return;
 
             var o = dlg.Options;
             string audio = _project.AudioPath;
+
+            var ranges = o.KiaiOnly
+                ? SpectrumBarsService.GetKiaiRanges(_project.TimingPoints, _project.TotalDuration)
+                : new List<(int Start, int End)> { (o.RangeStart, o.RangeEnd) };
+            ranges = ranges.Where(r => r.End - r.Start >= 1000).ToList();
+            if (ranges.Count == 0)
+            { MessageBox.Show("No encontré ningún kiai en los timing points de este mapa."); return; }
+
             TxtProjectName.Text = "Analizando audio...";
 
             try
             {
                 var sprites = await Task.Run(() =>
                 {
-                    var raw = new AudioSpectrumService().Analyze(audio, o.RangeStart, o.RangeEnd, o.Bars, 1000 / o.Fps);
-                    var smooth = AudioSpectrumService.Smooth(raw);
-                    return new SpectrumBarsService().Generate(smooth, o);
+                    var all = new List<OsuSprite>();
+                    foreach (var (a, b) in ranges)
+                    {
+                        var raw = new AudioSpectrumService().Analyze(audio, a, b, o.Bars, 1000 / o.Fps);
+                        var smooth = AudioSpectrumService.Smooth(raw);
+                        all.AddRange(new SpectrumBarsService().Generate(smooth, o));
+                    }
+                    return all;
                 });
 
                 foreach (var sp in sprites) _project.Sprites.Add(sp);
@@ -1524,24 +1638,7 @@ namespace OsuStoryBoardsEditor
                 opacity = ms < cmdF.StartTime ? cmdF.StartValues[0] : Lerp(cmdF.StartValues[0], cmdF.EndValues[0], t);
             }
 
-            // ── Color ──
-            var cmdC = _resolved[(int)CommandType.C];
-            if (cmdC != null)
-            {
-                double t = ApplyEasing(Lerp01(ms, cmdC.StartTime, cmdC.EndTime), cmdC.Easing);
-                double r, g, b;
-                if (ms < cmdC.StartTime)
-                {
-                    r = cmdC.StartValues[0]; g = cmdC.StartValues[1]; b = cmdC.StartValues[2];
-                }
-                else
-                {
-                    r = Lerp(cmdC.StartValues[0], cmdC.EndValues[0], t);
-                    g = Lerp(cmdC.StartValues[1], cmdC.EndValues[1], t);
-                    b = Lerp(cmdC.StartValues[2], cmdC.EndValues[2], t);
-                }
-                opacity *= (r * 0.299 + g * 0.587 + b * 0.114) / 255.0;
-            }
+            
 
             if (_pendingSprite == sprite && Math.Abs(ms - _pendingMs) < 1)
             {
@@ -2108,6 +2205,76 @@ namespace OsuStoryBoardsEditor
         {
             _project.Sprites.Clear();
             foreach (var sp in s.Sprites) _project.Sprites.Add(sp);
+        }
+
+        private void AddGeneratedSprites(List<OsuSprite> sprites, string label)
+        {
+            foreach (var sp in sprites) _project.Sprites.Add(sp);
+            LoadBitmap(sprites[0].FilePath);
+            _undoRedo.Record(new AddSpritesCommand(_project, sprites.ToArray(), label));
+            OsuCanvas.InvalidateVisual();
+            TxtProjectName.Text = $"{label}: {sprites.Count} sprites, {sprites.Sum(s => s.Commands.Count):N0} comandos  (Ctrl+Z para deshacer)";
+        }
+
+        private void OpenParticlesDialog()
+        {
+            var dlg = new ParamDialog("Explosión de partículas",
+                ("count", "Cantidad (máx 150)", "40"),
+                ("dur", "Duración (ms)", "1500"),
+                ("min", "Tamaño mínimo (px)", "6"),
+                ("max", "Tamaño máximo (px)", "40"),
+                ("d0", "Distancia mínima (px)", "80"),
+                ("d1", "Distancia máxima (px)", "420"),
+                ("spin", "Giro máximo (grados)", "180"),
+                ("alpha", "Opacidad (0-1)", "0.6"),
+                ("color", "Color #RRGGBB", "#B04A40"),
+                ("seed", "Semilla", "1"))
+            { Owner = this };
+            if (dlg.ShowDialog() != true) return;
+
+            if (!EffectsService.ParseHex(dlg.S("color"), out var r, out var g, out var b))
+            { MessageBox.Show("Color inválido. Usá el formato #RRGGBB."); return; }
+
+            var o = new ParticleBurstOptions
+            {
+                StartTime = (int)Math.Round(CurrentMs),   // arranca donde está el playhead
+                Duration = Math.Clamp((int)dlg.D("dur", 1500), 300, 20000),
+                Count = Math.Clamp((int)dlg.D("count", 40), 1, 150),
+                MinSize = Math.Max(1, dlg.D("min", 6)),
+                MaxSize = Math.Max(1, dlg.D("max", 40)),
+                MinDist = dlg.D("d0", 80),
+                MaxDist = Math.Max(dlg.D("d0", 80), dlg.D("d1", 420)),
+                SpinDeg = dlg.D("spin", 180),
+                Alpha = Math.Clamp(dlg.D("alpha", 0.6), 0.05, 1),
+                R = r,
+                G = g,
+                B = b,
+                Seed = (int)dlg.D("seed", 1)
+            };
+            AddGeneratedSprites(new EffectsService().GenerateBurst(o), "Explosión de partículas");
+        }
+
+        private void OpenRaysDialog()
+        {
+            var dlg = new ParamDialog("Rayos radiales",
+                ("dur", "Duración (ms)", "8000"),
+                ("rays", "Cantidad de rayos", "36"),
+                ("alpha", "Opacidad de los rayos (0-1)", "0.15"),
+                ("spin", "Giro total (grados)", "40"),
+                ("color", "Color #RRGGBB", "#B04A40"))
+            { Owner = this };
+            if (dlg.ShowDialog() != true) return;
+
+            if (!EffectsService.ParseHex(dlg.S("color"), out var r, out var g, out var b))
+            { MessageBox.Show("Color inválido. Usá el formato #RRGGBB."); return; }
+
+            int start = (int)Math.Round(CurrentMs);
+            int end = start + Math.Clamp((int)dlg.D("dur", 8000), 1000, 600000);
+            var s = new EffectsService().GenerateRays(start, end,
+                Math.Clamp((int)dlg.D("rays", 36), 4, 120),
+                Math.Clamp(dlg.D("alpha", 0.15), 0.02, 1),
+                dlg.D("spin", 40), r, g, b, 320, 240);
+            AddGeneratedSprites(new List<OsuSprite> { s }, "Rayos radiales");
         }
 
     }

@@ -10,6 +10,9 @@ namespace OsuStoryBoardsEditor.Services
     {
         public int RangeStart { get; set; }
         public int RangeEnd { get; set; }
+
+        public bool KiaiOnly { get; set; }
+
         public int Bars { get; set; } = 32;
         public int Fps { get; set; } = 20;              // cuadros de espectro por segundo
         public double TotalWidth { get; set; } = 854;   // ancho que ocupa toda la fila de barras
@@ -25,6 +28,18 @@ namespace OsuStoryBoardsEditor.Services
 
     public class SpectrumBarsService
     {
+        public static List<(int Start, int End)> GetKiaiRanges(IEnumerable<OsuTimingPoint> points, int totalMs)
+        {
+            var res = new List<(int Start, int End)>();
+            int? open = null;
+            foreach (var tp in points.OrderBy(t => t.Time))
+            {
+                if (tp.Kiai && open == null) open = tp.Time;
+                else if (!tp.Kiai && open != null) { res.Add((open.Value, tp.Time)); open = null; }
+            }
+            if (open != null && totalMs > open.Value) res.Add((open.Value, totalMs));   // kiai hasta el final
+            return res;
+        }
         // PNG blanco de 1x1: con el comando V (escala X/Y) cada barra mide exactamente w x h píxeles.
         public string EnsureBarPng()
         {
@@ -120,10 +135,78 @@ namespace OsuStoryBoardsEditor.Services
                         StartValues = new double[] { o.R, o.G, o.B },
                         EndValues = new double[] { o.R, o.G, o.B }
                     });
+                if (o.KiaiOnly)
+                {
+                    int fd = Math.Min(300, (tEnd - tStart) / 4);
+                    s.Commands.Add(new OsuCommand
+                    {
+                        Type = CommandType.F,
+                        StartTime = tStart,
+                        EndTime = tStart + fd,
+                        StartValues = new[] { 0.0 },
+                        EndValues = new[] { 1.0 }
+                    });
+                    s.Commands.Add(new OsuCommand
+                    {
+                        Type = CommandType.F,
+                        StartTime = tEnd - fd,
+                        EndTime = tEnd,
+                        StartValues = new[] { 1.0 },
+                        EndValues = new[] { 0.0 }
+                    });
+                }
 
                 result.Add(s);
             }
             return result;
+        }
+        // Interpolación lineal (los segmentos del espectro usan easing 0)
+        private static double[] ValuesAt(OsuCommand c, int t)
+        {
+            double k = (double)(t - c.StartTime) / (c.EndTime - c.StartTime);
+            var r = new double[c.StartValues.Length];
+            for (int i = 0; i < r.Length; i++)
+                r[i] = Math.Round(c.StartValues[i] + (c.EndValues[i] - c.StartValues[i]) * k);
+            return r;
+        }
+
+        // Deja solo lo que cae dentro de [from, to] (ms). Devuelve true si cambió algo.
+        public static bool Trim(IEnumerable<OsuSprite> bars, int from, int to, List<OsuSprite> toRemove)
+        {
+            var list = bars.ToList();
+            if (list.Count == 0 || from >= to) return false;
+            // si el rango no toca el espectro, no hace nada (evita dejarlo vacío)
+            if (from >= list.Max(s => s.EndTime) || to <= list.Min(s => s.StartTime)) return false;
+
+            bool changed = false;
+            foreach (var s in list)
+            {
+                if (s.EndTime <= from || s.StartTime >= to) { toRemove.Add(s); changed = true; continue; }
+                var kept = new List<OsuCommand>();
+                foreach (var c in s.Commands)
+                {
+                    if (c.EndTime <= from || c.StartTime >= to) { changed = true; continue; }   // fuera del rango
+
+                    if (c.StartTime < from || c.EndTime > to)   // cruza un borde: se corta interpolando
+                    {
+                        changed = true;
+                        int a = Math.Max(c.StartTime, from), b = Math.Min(c.EndTime, to);
+                        var n = c.Clone();
+                        n.StartValues = ValuesAt(c, a);
+                        n.EndValues = ValuesAt(c, b);
+                        n.StartTime = a;
+                        n.EndTime = b;
+                        kept.Add(n);
+                    }
+                    else kept.Add(c);
+                }
+
+                s.Commands.Clear();
+                foreach (var c in kept) s.Commands.Add(c);
+                s.StartTime = Math.Max(s.StartTime, from);
+                s.EndTime = Math.Min(s.EndTime, to);
+            }
+            return changed;
         }
     }
 }
