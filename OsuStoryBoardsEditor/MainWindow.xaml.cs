@@ -14,12 +14,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+
 namespace OsuStoryBoardsEditor
 {
     public partial class MainWindow : Window
     {
         // ── Servicios y proyecto ──────────────────────────
         private readonly OsbImportService _osbImport = new();
+        private readonly TextSpriteService _textService = new();
         private readonly OsuExportService _exportService = new();
         private readonly UndoRedoManager _undoRedo = new();
         private string _baseTitle = "";
@@ -32,9 +34,16 @@ namespace OsuStoryBoardsEditor
         private string? _bgPath = null;
 
         private DispatcherTimer? _audioOpenWatchdog;
-        // ── Cache de bitmaps Skia ─────────────────────────
 
+        // ── Cache de bitmaps Skia ─────────────────────────
         private readonly SKPaint _spritePaint = new SKPaint { IsAntialias = true };
+
+        // ── campos ──
+        private static readonly int CmdTypeCount = Enum.GetValues(typeof(CommandType)).Length;
+        private readonly OsuCommand?[] _resolved = new OsuCommand?[CmdTypeCount];
+        private readonly OsuCommand?[] _scrActive = new OsuCommand?[CmdTypeCount];
+        private readonly OsuCommand?[] _scrPast = new OsuCommand?[CmdTypeCount];
+        private readonly OsuCommand?[] _scrFuture = new OsuCommand?[CmdTypeCount];
 
         private readonly Dictionary<string, SKBitmap> _bitmapCache = new();
         private OsuSprite? _spriteClipboard;   // copia congelada: editar el original después no la altera
@@ -190,7 +199,7 @@ namespace OsuStoryBoardsEditor
                 double absH = bmp.Height * Math.Abs(state.scaleY);
                 var (ox, oy) = GetOriginOffset(sprite.Origin, absW, absH);
 
-                var cmdP = GetActiveOrLastCommand(sprite, CommandType.P, ms) ?? ResolveLoopCommand(sprite, CommandType.P, ms);
+                var cmdP = _resolved[(int)CommandType.P];
                 bool additive = cmdP?.Parameter == "A";
 
                 canvas.Save();
@@ -560,7 +569,20 @@ namespace OsuStoryBoardsEditor
         {
             var pt = WpfToCanvas(e.GetPosition(OsuCanvas));
             var sprite = HitTest(pt);
-            if (sprite == null) return;
+            if (sprite == null)
+            {
+                var bgMenu = new ContextMenu();
+                var miSpec = new MenuItem { Header = "Espectro de audio..." };
+                miSpec.Click += (_, __) => OpenSpectrumDialog();
+                bgMenu.Items.Add(miSpec);
+                bgMenu.PlacementTarget = OsuCanvas;
+                bgMenu.IsOpen = true;
+                e.Handled = true;
+                return;
+            }
+
+            OnSpriteSelected(sprite);
+            // ... el resto del método queda igual
 
             OnSpriteSelected(sprite);
 
@@ -580,6 +602,14 @@ namespace OsuStoryBoardsEditor
             var miLoop = new MenuItem { Header = "Loop al ritmo..." };
             miLoop.Click += (_, __) => OpenBeatLoopDialog(sprite);
             miEfectos.Items.Add(miLoop);
+            var miGlow = new MenuItem { Header = "Glow" };
+            foreach (var (label, sigma) in new[] { ("Suave", 6f), ("Medio", 12f), ("Fuerte", 24f) })
+            {
+                var mi = new MenuItem { Header = label };
+                mi.Click += (_, __) => AddGlow(sprite, sigma);
+                miGlow.Items.Add(mi);
+            }
+            miEfectos.Items.Add(miGlow);
             menu.Items.Add(miEfectos);
 
             menu.PlacementTarget = OsuCanvas;
@@ -659,6 +689,43 @@ namespace OsuStoryBoardsEditor
                 OnSpriteSelected(sprite);
                 OsuCanvas.InvalidateVisual();
             }
+        }
+
+        private void AddTextSprites(TextSpec spec, bool perLetter)
+        {
+            var created = new List<OsuSprite>();
+
+            if (!perLetter)
+            {
+                var sp = _project.AddSprite(_textService.EnsurePng(spec));
+                sp.Text = spec;
+                sp.Name = "texto: " + spec.Text;
+                created.Add(sp);
+            }
+            else
+            {
+                foreach (var (letter, cx) in _textService.LayoutLetters(spec, out _))
+                {
+                    var sp = _project.AddSprite(_textService.EnsurePng(letter));
+                    sp.Text = letter;
+                    sp.Name = $"letra '{letter.Text}'";
+                    sp.X = 320 + cx;          // 320 = centro X que usa AddSprite
+                    created.Add(sp);
+                }
+            }
+
+            if (created.Count == 0) return;
+            foreach (var sp in created) LoadBitmap(sp.FilePath);
+            _undoRedo.Record(new AddSpritesCommand(_project, created.ToArray(), $"Agregar texto \"{spec.Text}\""));
+            OnSpriteSelected(created[^1]);
+            OsuCanvas.InvalidateVisual();
+        }
+
+        private void BtnAddText_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new TextSpriteWindow { Owner = this };
+            if (dlg.ShowDialog() != true || dlg.Result == null) return;
+            AddTextSprites(dlg.Result, dlg.PerLetter);
         }
 
         // ── Playback ──────────────────────────────────────
@@ -860,6 +927,9 @@ namespace OsuStoryBoardsEditor
                     Rotation = sd.Rotation,
                     Opacity = sd.Opacity,
                     Visible = sd.Visible,
+                    Layer = sd.Layer,
+                    Origin = sd.Origin,
+                    Text = sd.Text,
                     StartTime = sd.StartTime,
                     EndTime = sd.EndTime
                 };
@@ -899,14 +969,24 @@ namespace OsuStoryBoardsEditor
                     sprite.Triggers.Add(trigger);
                 }
 
+                if (sprite.Text != null)
+                    sprite.FilePath = _textService.EnsurePng(sprite.Text);   // regenera si falta (otra PC, caché borrada)
                 _project.Sprites.Add(sprite);
-                LoadBitmap(sd.FilePath);
+                LoadBitmap(sprite.FilePath);
             }
 
             Timeline.SetProject(_project);
             OsuCanvas.InvalidateVisual();
             _undoRedo.Record(new ProjectStateCommand("Cargar proyecto", stateBefore, CaptureProjectState(), ApplyProjectState));
             _undoRedo.MarkSaved();
+
+            var missing = _project.Sprites
+                .Where(s => s.Text != null && !TextSpriteService.IsFontInstalled(s.Text.FontFamily))
+                .Select(s => s.Text!.FontFamily).Distinct().ToList();
+            if (missing.Count > 0)
+                MessageBox.Show("Estas fuentes no están instaladas y se usó otra en su lugar:\n" +
+                                string.Join("\n", missing), "Fuentes faltantes");
+
             MessageBox.Show("Proyecto cargado.", "Cargar");
         }
 
@@ -1017,6 +1097,11 @@ namespace OsuStoryBoardsEditor
                 TestBeatLoop();
                 e.Handled = true;
             }
+            else if (ctrl && e.Key == Key.E && !typing)      // ← NUEVO
+            {
+                TestSpectrum();
+                e.Handled = true;
+            }
         }
 
         // ── Loop al ritmo (prueba) ─────────────────────────
@@ -1035,11 +1120,77 @@ namespace OsuStoryBoardsEditor
             }
 
             using (_undoRedo.BeginTransaction("Loop al ritmo (prueba)", sprite))
+
                 sprite.Loops.AddRange(loops);
 
             RefreshPropertiesPanel(sprite);
             OsuCanvas.InvalidateVisual();
             TxtProjectName.Text = $"Generados {loops.Count} loops al ritmo  (Ctrl+Z para deshacer)";
+        }
+
+        // ── Espectro (prueba) ──────────────────────────────
+        private async void TestSpectrum()
+        {
+            if (string.IsNullOrEmpty(_project.AudioPath)) { TxtProjectName.Text = "Cargá un audio primero"; return; }
+
+            string path = _project.AudioPath;
+            int end = _project.TotalDuration > 0 ? _project.TotalDuration : 30000;
+            TxtProjectName.Text = "Analizando audio...";
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var data = await Task.Run(() => new AudioSpectrumService().Analyze(path, 0, end, bands: 32, frameMs: 50));
+                var smooth = AudioSpectrumService.Smooth(data);
+
+                // promedio por banda: graves a la izquierda, agudos a la derecha
+                var avg = Enumerable.Range(0, data.BandCount)
+                    .Select(b => data.Frames.Average(fr => fr[b]))
+                    .Select(v => v.ToString("0.00"));
+                System.Diagnostics.Debug.WriteLine("Promedio por banda: " + string.Join(" ", avg));
+
+                TxtProjectName.Text = $"Espectro OK: {data.Frames.Length} frames x {data.BandCount} bandas en {sw.ElapsedMilliseconds} ms";
+            }
+            catch (Exception ex)
+            {
+                TxtProjectName.Text = "Error de espectro: " + ex.Message;
+            }
+        }
+
+        // ── Espectro de audio ──────────────────────────────
+        private async void OpenSpectrumDialog()
+        {
+            if (string.IsNullOrEmpty(_project.AudioPath) || !File.Exists(_project.AudioPath))
+            { MessageBox.Show("Arrastrá un archivo de audio (.mp3 / .ogg) primero."); return; }
+
+            var dlg = new SpectrumWindow(_project.TotalDuration) { Owner = this };
+            if (dlg.ShowDialog() != true) return;
+
+            var o = dlg.Options;
+            string audio = _project.AudioPath;
+            TxtProjectName.Text = "Analizando audio...";
+
+            try
+            {
+                var sprites = await Task.Run(() =>
+                {
+                    var raw = new AudioSpectrumService().Analyze(audio, o.RangeStart, o.RangeEnd, o.Bars, 1000 / o.Fps);
+                    var smooth = AudioSpectrumService.Smooth(raw);
+                    return new SpectrumBarsService().Generate(smooth, o);
+                });
+
+                foreach (var sp in sprites) _project.Sprites.Add(sp);
+                LoadBitmap(sprites[0].FilePath);
+                _undoRedo.Record(new AddSpritesCommand(_project, sprites.ToArray(), "Agregar espectro de audio"));
+                OsuCanvas.InvalidateVisual();
+
+                int cmds = sprites.Sum(s => s.Commands.Count);
+                TxtProjectName.Text = $"Espectro: {sprites.Count} barras, {cmds:N0} comandos  (Ctrl+Z para deshacer)";
+            }
+            catch (Exception ex)
+            {
+                TxtProjectName.Text = "Error de espectro: " + ex.Message;
+            }
         }
 
         private void OpenBeatLoopDialog(OsuSprite sprite)
@@ -1057,7 +1208,16 @@ namespace OsuStoryBoardsEditor
             }
 
             using (_undoRedo.BeginTransaction("Loop al ritmo", sprite))
+            {
+                // reemplaza loops previos que toquen los mismos comandos (MX, S, etc.)
+                var types = loops.SelectMany(l => l.Commands.Select(c => c.Type)).ToHashSet();
+                sprite.Loops.RemoveAll(l => l.Commands.Any(c => types.Contains(c.Type)));
+                // el pulso de brillo reemplaza a la opacidad fija (si no, los dos F se pisarían)
+                if (dlg.Options.Type == BeatEffectType.GlowPulse)
+                    foreach (var f in sprite.Commands.Where(c => c.Type == CommandType.F).ToList())
+                        sprite.Commands.Remove(f);
                 sprite.Loops.AddRange(loops);
+            }
 
             RefreshPropertiesPanel(sprite);
             OsuCanvas.InvalidateVisual();
@@ -1189,6 +1349,42 @@ namespace OsuStoryBoardsEditor
             return true;
         }
 
+        // ── método nuevo: resuelve el comando vigente de TODOS los tipos en una sola pasada ──
+        private void ResolveAllCommands(OsuSprite sprite, double ms)
+        {
+            Array.Clear(_scrActive, 0, CmdTypeCount);
+            Array.Clear(_scrPast, 0, CmdTypeCount);
+            Array.Clear(_scrFuture, 0, CmdTypeCount);
+
+            foreach (var c in sprite.Commands)
+            {
+                int k = (int)c.Type;
+                if (c.StartTime <= ms && c.EndTime >= ms)
+                {
+                    var a = _scrActive[k];
+                    if (a == null || c.StartTime > a.StartTime) _scrActive[k] = c;
+                }
+                else if (c.EndTime < ms)
+                {
+                    var p = _scrPast[k];
+                    if (p == null || c.EndTime > p.EndTime) _scrPast[k] = c;
+                }
+                else if (c.StartTime > ms)
+                {
+                    var f = _scrFuture[k];
+                    if (f == null || c.StartTime < f.StartTime) _scrFuture[k] = c;
+                }
+            }
+
+            bool hasLoops = sprite.Loops.Count > 0;
+            for (int k = 0; k < CmdTypeCount; k++)
+            {
+                var cmd = _scrActive[k] ?? _scrPast[k] ?? _scrFuture[k];
+                if (cmd == null && hasLoops)
+                    cmd = ResolveLoopCommand(sprite, (CommandType)k, ms);
+                _resolved[k] = cmd;
+            }
+        }
         private static OsuCommand? GetActiveOrLastCommand(OsuSprite sprite, CommandType type, double ms)
         {
             OsuCommand? active = null;
@@ -1220,14 +1416,15 @@ namespace OsuStoryBoardsEditor
         }
 
         private (double x, double y, double scaleX, double scaleY, double rot, double opacity)
-    GetSpriteStateAt(OsuSprite sprite, double ms)
+
+     GetSpriteStateAt(OsuSprite sprite, double ms)
         {
+            ResolveAllCommands(sprite, ms);
+
             // ── Escala ──
             double scaleX = sprite.Scale, scaleY = sprite.Scale;
-            var cmdV = GetActiveOrLastCommand(sprite, CommandType.V, ms)
-                       ?? ResolveLoopCommand(sprite, CommandType.V, ms);
-            var cmdS = GetActiveOrLastCommand(sprite, CommandType.S, ms)
-                       ?? ResolveLoopCommand(sprite, CommandType.S, ms);
+            var cmdV = _resolved[(int)CommandType.V];
+            var cmdS = _resolved[(int)CommandType.S];
             if (cmdV != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdV.StartTime, cmdV.EndTime), cmdV.Easing);
@@ -1243,23 +1440,20 @@ namespace OsuStoryBoardsEditor
 
             // ── Posición ──
             double x = sprite.X, y = sprite.Y;
-            var cmdM = GetActiveOrLastCommand(sprite, CommandType.M, ms)
-                       ?? ResolveLoopCommand(sprite, CommandType.M, ms);
+            var cmdM = _resolved[(int)CommandType.M];
             if (cmdM != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdM.StartTime, cmdM.EndTime), cmdM.Easing);
                 x = ms < cmdM.StartTime ? cmdM.StartValues[0] : Lerp(cmdM.StartValues[0], cmdM.EndValues[0], t);
                 y = ms < cmdM.StartTime ? cmdM.StartValues[1] : Lerp(cmdM.StartValues[1], cmdM.EndValues[1], t);
             }
-            var cmdMX = GetActiveOrLastCommand(sprite, CommandType.MX, ms)
-                        ?? ResolveLoopCommand(sprite, CommandType.MX, ms);
+            var cmdMX = _resolved[(int)CommandType.MX];
             if (cmdMX != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdMX.StartTime, cmdMX.EndTime), cmdMX.Easing);
                 x = ms < cmdMX.StartTime ? cmdMX.StartValues[0] : Lerp(cmdMX.StartValues[0], cmdMX.EndValues[0], t);
             }
-            var cmdMY = GetActiveOrLastCommand(sprite, CommandType.MY, ms)
-                        ?? ResolveLoopCommand(sprite, CommandType.MY, ms);
+            var cmdMY = _resolved[(int)CommandType.MY];
             if (cmdMY != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdMY.StartTime, cmdMY.EndTime), cmdMY.Easing);
@@ -1268,8 +1462,7 @@ namespace OsuStoryBoardsEditor
 
             // ── Rotación ──
             double rot = sprite.Rotation;
-            var cmdR = GetActiveOrLastCommand(sprite, CommandType.R, ms)
-                       ?? ResolveLoopCommand(sprite, CommandType.R, ms);
+            var cmdR = _resolved[(int)CommandType.R];
             if (cmdR != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdR.StartTime, cmdR.EndTime), cmdR.Easing);
@@ -1278,8 +1471,7 @@ namespace OsuStoryBoardsEditor
 
             // ── Opacidad ──
             double opacity = sprite.Opacity;
-            var cmdF = GetActiveOrLastCommand(sprite, CommandType.F, ms)
-                       ?? ResolveLoopCommand(sprite, CommandType.F, ms);
+            var cmdF = _resolved[(int)CommandType.F];
             if (cmdF != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdF.StartTime, cmdF.EndTime), cmdF.Easing);
@@ -1287,8 +1479,7 @@ namespace OsuStoryBoardsEditor
             }
 
             // ── Color ──
-            var cmdC = GetActiveOrLastCommand(sprite, CommandType.C, ms)
-                       ?? ResolveLoopCommand(sprite, CommandType.C, ms);
+            var cmdC = _resolved[(int)CommandType.C];
             if (cmdC != null)
             {
                 double t = ApplyEasing(Lerp01(ms, cmdC.StartTime, cmdC.EndTime), cmdC.Easing);
@@ -1376,6 +1567,9 @@ namespace OsuStoryBoardsEditor
                     Rotation = s.Rotation,
                     Opacity = s.Opacity,
                     Visible = s.Visible,
+                    Layer = s.Layer,
+                    Origin = s.Origin,
+                    Text = s.Text,
                     StartTime = s.StartTime,
                     EndTime = s.EndTime,
                     Commands = s.Commands.Select(c => new CommandSaveData
@@ -1623,8 +1817,8 @@ namespace OsuStoryBoardsEditor
                 case 14: return t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.Pow(-2 * t + 2, 5) / 2; // InOutQuint
 
                 case 15: return 1 - Math.Cos((t * Math.PI) / 2);                       // InSine
-                case 16: return Math.Sin((t * Math.PI) / 2);                          // OutSine
-                case 17: return -(Math.Cos(Math.PI * t) - 1) / 2;                     // InOutSine
+                case 16: return Math.Sin((t * Math.PI) / 2);                           // OutSine
+                case 17: return -(Math.Cos(Math.PI * t) - 1) / 2;                      // InOutSine
 
                 case 18: return t == 0 ? 0 : Math.Pow(2, 10 * t - 10);                 // InExpo
                 case 19: return t == 1 ? 1 : 1 - Math.Pow(2, -10 * t);                 // OutExpo
@@ -1657,7 +1851,7 @@ namespace OsuStoryBoardsEditor
                     if (t == 1) return 1;
                     return Math.Pow(2, -10 * t) * Math.Sin((t * 10 - 0.75) * c4 * 0.25) + 1;
 
-                case 28:                                                    // InOutElastic
+                case 28:                                                            // InOutElastic
                     if (t == 0) return 0;
                     if (t == 1) return 1;
                     return t < 0.5
@@ -1673,7 +1867,7 @@ namespace OsuStoryBoardsEditor
                         : (Math.Pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2;
 
                 case 32: return 1 - OutBounce(1 - t);                                  // InBounce
-                case 33: return OutBounce(t);                                         // OutBounce
+                case 33: return OutBounce(t);                                          // OutBounce
                 case 34:                                                              // InOutBounce
                     return t < 0.5
                         ? (1 - OutBounce(1 - 2 * t)) / 2
@@ -1712,6 +1906,82 @@ namespace OsuStoryBoardsEditor
             _audioOpenWatchdog.Start();
 
             _audioPlayer.Open(new Uri(path));
+        }
+
+        private void AddGlow(OsuSprite src, float sigma)
+        {
+            if (src.Origin != SpriteOrigin.Centre)
+            { MessageBox.Show("Por ahora el glow solo funciona con sprites de origen Centre."); return; }
+            if (!File.Exists(src.FilePath)) return;
+
+            string glowPath;
+            try { glowPath = new GlowService().EnsureGlowPng(src.FilePath, sigma); }
+            catch (Exception ex) { MessageBox.Show("No se pudo generar el glow: " + ex.Message); return; }
+
+            const double intensity = 0.8;
+            var glow = new OsuSprite
+            {
+                FilePath = glowPath,
+                Name = "glow: " + src.Name,
+                X = src.X,
+                Y = src.Y,
+                Scale = src.Scale,
+                Rotation = src.Rotation,
+                Opacity = intensity,
+                Layer = src.Layer,
+                Origin = SpriteOrigin.Centre,
+                StartTime = src.StartTime,
+                EndTime = src.EndTime
+            };
+
+            // El glow acompaña el movimiento del original (la opacidad es propia)
+            foreach (var c in src.Commands.Where(c => c.Type is CommandType.M or CommandType.MX
+                     or CommandType.MY or CommandType.S or CommandType.V or CommandType.R))
+                glow.Commands.Add(c.Clone());
+
+            // El exportador solo escribe escala/rotación base cuando el sprite no tiene comandos: se las damos explícitas
+            bool hasScale = glow.Commands.Any(c => c.Type is CommandType.S or CommandType.V);
+            if (!hasScale && Math.Abs(src.Scale - 1) > 1e-6)
+                glow.Commands.Add(new OsuCommand
+                {
+                    Type = CommandType.S,
+                    StartTime = glow.StartTime,
+                    EndTime = glow.EndTime,
+                    StartValues = new[] { src.Scale },
+                    EndValues = new[] { src.Scale }
+                });
+            if (!glow.Commands.Any(c => c.Type == CommandType.R) && src.Rotation != 0)
+                glow.Commands.Add(new OsuCommand
+                {
+                    Type = CommandType.R,
+                    StartTime = glow.StartTime,
+                    EndTime = glow.EndTime,
+                    StartValues = new[] { src.Rotation },
+                    EndValues = new[] { src.Rotation }
+                });
+
+            glow.Commands.Add(new OsuCommand
+            {
+                Type = CommandType.F,
+                StartTime = glow.StartTime,
+                EndTime = glow.EndTime,
+                StartValues = new[] { intensity },
+                EndValues = new[] { intensity }
+            });
+            glow.Commands.Add(new OsuCommand
+            {
+                Type = CommandType.P,
+                StartTime = glow.StartTime,
+                EndTime = glow.EndTime,
+                Parameter = "A"
+            });
+
+            // Justo detrás del original (el orden de la lista es el orden de dibujo)
+            _project.Sprites.Insert(_project.Sprites.IndexOf(src), glow);
+            LoadBitmap(glow.FilePath);
+            _undoRedo.Record(new AddSpritesCommand(_project, new[] { glow }, "Agregar glow"));
+            OnSpriteSelected(glow);
+            OsuCanvas.InvalidateVisual();
         }
 
     }

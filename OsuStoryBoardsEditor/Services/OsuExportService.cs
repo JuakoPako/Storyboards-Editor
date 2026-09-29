@@ -64,13 +64,14 @@ namespace OsuStoryBoardsEditor.Services
                         writer.WriteLine($" S,0,{sprite.StartTime},{sprite.EndTime},{sprite.Scale:F2},{sprite.Scale:F2}");
                     if (sprite.Rotation != 0.0)
                     {
-                        double rad = sprite.Rotation * Math.PI / 180.0;
+                        double rad = sprite.Rotation;
                         writer.WriteLine($" R,0,{sprite.StartTime},{sprite.EndTime},{rad:F4},{rad:F4}");
                     }
                 }
                 else
                 {
-                    bool hasF = sprite.Commands.Any(c => c.Type == CommandType.F);
+                    bool hasF = sprite.Commands.Any(c => c.Type == CommandType.F)
+         || sprite.Loops.Any(l => l.Commands.Any(c => c.Type == CommandType.F));
                     if (!hasF)
                         writer.WriteLine($" F,0,{sprite.StartTime},{sprite.EndTime},1,1");
 
@@ -128,11 +129,7 @@ namespace OsuStoryBoardsEditor.Services
                     break;
 
                 case CommandType.R:
-                    {
-                        double startRad = cmd.StartValues[0] * Math.PI / 180.0;
-                        double endRad = cmd.EndValues[0] * Math.PI / 180.0;
-                        writer.WriteLine($"{indent}R,{cmd.Easing},{cmd.StartTime},{cmd.EndTime},{startRad:F4},{endRad:F4}");
-                    }
+                    writer.WriteLine($"{indent}R,{cmd.Easing},{cmd.StartTime},{cmd.EndTime},{cmd.StartValues[0]:F4},{cmd.EndValues[0]:F4}");
                     break;
 
                 case CommandType.MX:

@@ -11,6 +11,7 @@ namespace OsuStoryBoardsEditor.Models
         TopRight, BottomCentre, BottomLeft, BottomRight, CentreRight
     }
 
+    
     // ── Loop de comandos ──────────────────────────────────
     public class OsuSpriteLoop
     {
@@ -55,6 +56,8 @@ namespace OsuStoryBoardsEditor.Models
         private bool _visible = true;
 
         public string FilePath { get; set; } = "";
+
+        public TextSpec? Text { get; set; }
         public SpriteLayer Layer { get; set; } = SpriteLayer.Background;
         public SpriteOrigin Origin { get; set; } = SpriteOrigin.Centre;
 
@@ -118,6 +121,7 @@ namespace OsuStoryBoardsEditor.Models
                 Rotation = Rotation,
                 Opacity = Opacity,
                 Visible = Visible,
+                Text = Text,
                 StartTime = StartTime + timeOffset,
                 EndTime = EndTime + timeOffset
             };

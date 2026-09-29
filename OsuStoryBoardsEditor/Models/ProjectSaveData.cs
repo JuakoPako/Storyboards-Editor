@@ -1,4 +1,7 @@
-﻿namespace OsuStoryBoardsEditor.Models
+﻿using System;
+using System.Collections.Generic;
+
+namespace OsuStoryBoardsEditor.Models
 {
     public class CommandSaveData
     {
@@ -10,7 +13,6 @@
         public double[] EndValues { get; set; } = Array.Empty<double>();
 
         public string? Parameter { get; set; }
-
     }
 
     public class SpriteSaveData
@@ -26,6 +28,10 @@
         public int StartTime { get; set; }
         public int EndTime { get; set; } = 5000;
 
+        public SpriteLayer Layer { get; set; } = SpriteLayer.Background;
+        public SpriteOrigin Origin { get; set; } = SpriteOrigin.Centre;
+        public TextSpec? Text { get; set; }
+
         public List<TriggerSaveData> Triggers { get; set; } = new();
         public List<CommandSaveData> Commands { get; set; } = new();
     }
@@ -34,6 +40,7 @@
     {
         public string AudioPath { get; set; } = "";
         public int TotalDuration { get; set; }
+
         public List<SpriteSaveData> Sprites { get; set; } = new();
     }
 

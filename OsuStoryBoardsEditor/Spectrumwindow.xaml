@@ -1,0 +1,99 @@
+﻿<Window x:Class="OsuStoryBoardsEditor.SpectrumWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Espectro de audio" Width="360" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <StackPanel Margin="14">
+
+        <TextBlock Text="Rango de tiempo (ms)" FontWeight="SemiBold"/>
+        <Grid Margin="0,4,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Desde"/>
+                <TextBox x:Name="TxtFrom" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Hasta"/>
+                <TextBox x:Name="TxtTo" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+        <TextBlock Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,10"
+                   Text="Tip: probá primero con un tramo corto (20-30 s). Toda la canción genera decenas de miles de comandos."/>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Cantidad de barras"/>
+                <TextBox x:Name="TxtBars" Text="32" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Cuadros por segundo"/>
+                <TextBox x:Name="TxtFps" Text="20" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Ancho total (px)"/>
+                <TextBox x:Name="TxtWidth" Text="854" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Separación (px)"/>
+                <TextBox x:Name="TxtGap" Text="2" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Alto máximo (px)"/>
+                <TextBox x:Name="TxtMaxH" Text="120" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Línea base Y"/>
+                <TextBox x:Name="TxtBaseY" Text="470" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Contraste (1 = lineal)"/>
+                <TextBox x:Name="TxtContrast" Text="2" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Cambio mínimo (px)"/>
+                <TextBox x:Name="TxtMinDelta" Text="2" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="Color (#RRGGBB)"/>
+        <TextBox x:Name="TxtColor" Text="#FFFFFF" Margin="0,2,0,0"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Generar" Width="80" Margin="0,0,8,0" IsDefault="True" Click="BtnAccept_Click"/>
+            <Button Content="Cancelar" Width="80" IsCancel="True" Click="BtnCancel_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

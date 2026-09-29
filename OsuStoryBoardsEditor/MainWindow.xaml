@@ -140,6 +140,8 @@
         Click="BtnAddKeyframe_Click"/>
                     <Button Style="{StaticResource ToolBtn}" Content="+" ToolTip="Añadir Sprite"
                             Click="BtnAddSprite_Click"/>
+                    <Button Style="{StaticResource ToolBtn}" Content="T" ToolTip="Añadir texto"
+        FontWeight="Bold" Click="BtnAddText_Click"/>
                     <Rectangle Width="0.5" Height="16" Fill="{StaticResource Border}" Margin="4,0"/>
                     <Button Style="{StaticResource ToolBtn}" Content="⊞" ToolTip="Mostrar cuadrícula"/>
 

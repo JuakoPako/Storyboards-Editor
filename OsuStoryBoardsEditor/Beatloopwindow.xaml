@@ -10,6 +10,7 @@
             <ComboBoxItem Content="Pulso de escala"/>
             <ComboBoxItem Content="Movimiento con wrap"/>
             <ComboBoxItem Content="Saltos al ritmo"/>
+            <ComboBoxItem Content="Pulso de brillo (glow)"/>
         </ComboBox>
 
         <StackPanel x:Name="PanelPulse">
@@ -44,15 +45,29 @@
             </ComboBox>
             <CheckBox x:Name="ChkStepReverse" Content="Invertir dirección" Margin="0,0,0,8"/>
             <TextBlock Text="Saltos para cruzar la pantalla"/>
-            <TextBox x:Name="TxtJumps" Text="8" Margin="0,2,0,8"/>
+            <TextBox x:Name="TxtJumps" Text="16" Margin="0,2,0,8"/>
             <TextBlock Text="Beats entre saltos (1 = cada beat, 4 = tiempo fuerte)"/>
             <TextBox x:Name="TxtBeatsPerJump" Text="1" Margin="0,2,0,8"/>
-            <TextBlock Text="Duración del salto (% del intervalo)"/>
-            <TextBox x:Name="TxtJumpPct" Text="35" Margin="0,2,0,8"/>
+            <TextBlock Text="Duración del salto (ms)"/>
+            <TextBox x:Name="TxtJumpMs" Text="80" Margin="0,2,0,8"/>
             <TextBlock Text="Margen fuera de pantalla (px)"/>
             <TextBox x:Name="TxtStepMargin" Text="100" Margin="0,2,0,8"/>
             <TextBlock Text="Easing del salto"/>
             <ComboBox x:Name="CmbStepEasing" Margin="0,2,0,8"/>
+            <CheckBox x:Name="ChkShakePos" Content="Temblor de posición" Margin="0,4,0,4"/>
+            <TextBlock Text="Intensidad (px)"/>
+            <TextBox x:Name="TxtShakePx" Text="3" Margin="0,2,0,8"
+         IsEnabled="{Binding IsChecked, ElementName=ChkShakePos}"/>
+
+            <CheckBox x:Name="ChkShakeRot" Content="Balanceo de giro" Margin="0,0,0,4"/>
+            <TextBlock Text="Intensidad (grados)"/>
+            <TextBox x:Name="TxtShakeDeg" Text="4" Margin="0,2,0,8"
+         IsEnabled="{Binding IsChecked, ElementName=ChkShakeRot}"/>
+
+            <TextBlock Text="Vibraciones"/>
+            <TextBox x:Name="TxtShakeCount" Text="3" Margin="0,2,0,8"/>
+            <TextBlock Text="Duración del temblor (ms)"/>
+            <TextBox x:Name="TxtShakeMs" Text="150" Margin="0,2,0,8"/>
         </StackPanel>
 
         <Grid Margin="0,4,0,0">

@@ -62,6 +62,11 @@ namespace OsuStoryBoardsEditor.Controls
         // ── Undo/redo global ──
         private UndoRedoManager? _undo;
         private UndoRedoManager.Transaction? _clipTx;      // drag/trim de clip
+
+        // Auto-scroll al arrastrar clips cerca del borde del timeline
+        private System.Windows.Threading.DispatcherTimer? _edgeScrollTimer;
+        private const double EdgeZone = 50;       // px desde el borde donde empieza el scroll
+        private const double EdgeMaxSpeed = 30;   // px por tick (16 ms) pegado al borde
         private UndoRedoManager.Transaction? _diamondTx;   // drag de keyframe
         public void SetUndoManager(UndoRedoManager undo) => _undo = undo;
 
@@ -71,6 +76,10 @@ namespace OsuStoryBoardsEditor.Controls
         private static readonly Brush SelectedRowBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xE8, 0x79, 0xF9));
         private static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0x79, 0xF9));
         private static readonly Brush LabelMutedBrush = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x70));
+
+        private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+        private static readonly Brush DiamondFillBrush = Frozen(Color.FromRgb(0xE8, 0x79, 0xF9));
+        private static readonly Brush DiamondStrokeBrush = Frozen(Color.FromArgb(200, 0xFF, 0xFF, 0xFF));
 
 
 
@@ -118,6 +127,15 @@ namespace OsuStoryBoardsEditor.Controls
         {
             InitializeComponent();
 
+            TracksScrollViewer.SizeChanged += (s, e) =>
+            {
+                if (e.NewSize.Width <= 0) return;
+                _baseWidth = TracksScrollViewer.ViewportWidth > 0
+                    ? TracksScrollViewer.ViewportWidth
+                    : e.NewSize.Width;
+                RequestRedraw();
+            };
+
             TimelineCanvas.RenderTransformOrigin = new Point(0, 0);
             TimelineCanvas.RenderTransform = _zoomPreview;
 
@@ -141,6 +159,39 @@ namespace OsuStoryBoardsEditor.Controls
             };
         }
 
+        private StoryboardProject? _subscribedProject;
+        private bool _redrawPending;
+
+        // Junta muchos pedidos de redibujo en uno solo
+        public void RequestRedraw()
+        {
+            if (_redrawPending) return;
+            _redrawPending = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _redrawPending = false;
+                if (_project != null) RedrawTracks(_project.Sprites);
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void OnProjectSpritesChanged(object? s, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+            => RequestRedraw();
+
+        private void OnProjectPropertyChanged(object? s, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (_project == null) return;
+            if (e.PropertyName == nameof(StoryboardProject.TotalDuration))
+            {
+                _totalDuration = _project.TotalDuration;
+                TxtTotalTime.Text = $"total: {TimeSpan.FromMilliseconds(_totalDuration):mm\\:ss\\.fff}";
+                RequestRedraw();
+            }
+            else if (e.PropertyName == nameof(StoryboardProject.BeatDivisor))
+            {
+                RequestRedraw();
+            }
+        }
+
         public void SetProject(StoryboardProject project)
         {
             _project = project;
@@ -148,25 +199,24 @@ namespace OsuStoryBoardsEditor.Controls
             TxtTotalTime.Text = $"total: {TimeSpan.FromMilliseconds(project.TotalDuration):mm\\:ss\\.fff}";
             _totalDuration = project.TotalDuration;
 
-            project.Sprites.CollectionChanged += (s, e) => RedrawTracks(project.Sprites);
-            project.PropertyChanged += (s, e) =>
+            if (!ReferenceEquals(_subscribedProject, project))
             {
-                if (e.PropertyName == nameof(StoryboardProject.TotalDuration))
+                if (_subscribedProject != null)
                 {
-                    _totalDuration = project.TotalDuration;
-                    TxtTotalTime.Text = $"total: {TimeSpan.FromMilliseconds(_totalDuration):mm\\:ss\\.fff}";
-                    RedrawTracks(project.Sprites);
+                    _subscribedProject.Sprites.CollectionChanged -= OnProjectSpritesChanged;
+                    _subscribedProject.PropertyChanged -= OnProjectPropertyChanged;
                 }
-                // ── NUEVO: redibujar la grilla de beats cuando cambia el divisor de snap ──
-                else if (e.PropertyName == nameof(StoryboardProject.BeatDivisor))
-                {
-                    RedrawTracks(project.Sprites);
-                }
-            };
+                project.Sprites.CollectionChanged += OnProjectSpritesChanged;
+                project.PropertyChanged += OnProjectPropertyChanged;
+                _subscribedProject = project;
+            }
 
             Dispatcher.InvokeAsync(() =>
             {
-                _baseWidth = TimelineCanvas.ActualWidth;
+                if (_baseWidth <= 0)
+                    _baseWidth = TracksScrollViewer.ViewportWidth > 0
+                        ? TracksScrollViewer.ViewportWidth
+                        : TimelineCanvas.ActualWidth;
                 RedrawTracks(project.Sprites);
                 if (project.TimingPoints.Count > 0) AutoFitZoomToBeats();
             }, System.Windows.Threading.DispatcherPriority.Loaded);
@@ -175,7 +225,7 @@ namespace OsuStoryBoardsEditor.Controls
         private void TimelineCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             if (_baseWidth == 0) _baseWidth = e.NewSize.Width;
-            if (_project != null) RedrawTracks(_project.Sprites);
+            RequestRedraw();
         }
 
         public void UpdatePlayhead(double currentMs)
@@ -321,19 +371,23 @@ namespace OsuStoryBoardsEditor.Controls
 
             if (expanded)
             {
-                var times = sprite.Commands
-                    .SelectMany(c => new[] { c.StartTime, c.EndTime })
-                    .Distinct()
-                    .OrderBy(t => t);
-
-                foreach (var time in times)
+                var byTime = new SortedDictionary<int, List<OsuCommand>>();
+                foreach (var c in sprite.Commands)
                 {
-                    var cmdsAtTime = sprite.Commands
-                        .Where(c => c.StartTime == time || c.EndTime == time)
-                        .ToList();
-                    if (cmdsAtTime.Count > 0)
-                        DrawGroupedDiamond(time, sprite, cmdsAtTime, trackY, trackHeight, width);
+                    if (!byTime.TryGetValue(c.StartTime, out var l1))
+                        byTime[c.StartTime] = l1 = new List<OsuCommand>();
+                    l1.Add(c);
+
+                    if (c.EndTime != c.StartTime)
+                    {
+                        if (!byTime.TryGetValue(c.EndTime, out var l2))
+                            byTime[c.EndTime] = l2 = new List<OsuCommand>();
+                        l2.Add(c);
+                    }
                 }
+
+                foreach (var (time, cmdsAtTime) in byTime)
+                    DrawGroupedDiamond(time, sprite, cmdsAtTime, trackY, trackHeight, width);
             }
 
             return trackY + trackHeight;
@@ -822,8 +876,15 @@ namespace OsuStoryBoardsEditor.Controls
             }
 
             if (_draggingSprite == null) return;
+            ApplyClipDrag(e.GetPosition(TimelineCanvas).X);
+        }
+
+        // Lógica de mover/recortar clip, separada para poder llamarla también desde el timer
+        private void ApplyClipDrag(double canvasX)
+        {
+            if (_draggingSprite == null) return;
             double width = (_baseWidth > 0 ? _baseWidth : TimelineCanvas.ActualWidth) * _zoom;
-            double dx = e.GetPosition(TimelineCanvas).X - _dragStartX;
+            double dx = canvasX - _dragStartX;
             int deltams = (int)((dx / width) * _totalDuration);
 
             switch (_dragMode)
@@ -845,6 +906,49 @@ namespace OsuStoryBoardsEditor.Controls
             UpdateClipPosition(_draggingSprite);
         }
 
+        private void StartEdgeScroll()
+        {
+            _edgeScrollTimer ??= new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(16)
+            };
+            _edgeScrollTimer.Tick -= EdgeScroll_Tick;
+            _edgeScrollTimer.Tick += EdgeScroll_Tick;
+            _edgeScrollTimer.Start();
+        }
+
+        private void StopEdgeScroll() => _edgeScrollTimer?.Stop();
+
+        private void EdgeScroll_Tick(object? sender, EventArgs e)
+        {
+            // seguro: si se soltó el botón sin que llegara el MouseUp, se apaga solo
+            if (_draggingSprite == null || Mouse.LeftButton != MouseButtonState.Pressed)
+            {
+                StopEdgeScroll();
+                return;
+            }
+
+            double viewportW = TracksScrollViewer.ViewportWidth;
+            if (viewportW <= 0) return;
+
+            double x = Mouse.GetPosition(TracksScrollViewer).X;   // relativo a la zona visible
+            double speed = 0;                                     // -1..1, más rápido cuanto más al borde
+            if (x > viewportW - EdgeZone)
+                speed = Math.Min(1, (x - (viewportW - EdgeZone)) / EdgeZone);
+            else if (x < EdgeZone)
+                speed = -Math.Min(1, (EdgeZone - x) / EdgeZone);
+            if (speed == 0) return;
+
+            double current = TracksScrollViewer.HorizontalOffset;
+            double target = Math.Clamp(current + speed * EdgeMaxSpeed, 0, TracksScrollViewer.ScrollableWidth);
+            if (Math.Abs(target - current) < 0.01) return;       // ya llegó al extremo
+
+            TracksScrollViewer.ScrollToHorizontalOffset(target);
+
+            // El mouse no se movió pero el contenido sí: X en el canvas = X visible + offset nuevo
+            ApplyClipDrag(x + target);
+        }
+
         private void Timeline_MouseUp(object sender, MouseButtonEventArgs e)
         {
 
@@ -858,6 +962,7 @@ namespace OsuStoryBoardsEditor.Controls
                 _dragMode == DragMode.ClipTrimStart ||
                 _dragMode == DragMode.ClipTrimEnd)
             {
+                StopEdgeScroll();
                 _clipTx?.Dispose();   // registra el paso solo si el clip realmente cambió
                 _clipTx = null;
                 _draggingRect?.ReleaseMouseCapture();
@@ -885,8 +990,8 @@ namespace OsuStoryBoardsEditor.Controls
 
         private static void ApplyDiamondStyle(Polygon d, bool selected)
         {
-            d.Fill = selected ? Brushes.White : new SolidColorBrush(Color.FromRgb(0xE8, 0x79, 0xF9));
-            d.Stroke = selected ? AccentBrush : new SolidColorBrush(Color.FromArgb(200, 0xFF, 0xFF, 0xFF));
+            d.Fill = selected ? Brushes.White : DiamondFillBrush;
+            d.Stroke = selected ? AccentBrush : DiamondStrokeBrush;
             d.StrokeThickness = selected ? 2.2 : 1.2;
         }
 
@@ -1229,6 +1334,7 @@ namespace OsuStoryBoardsEditor.Controls
             };
 
             rect.CaptureMouse();
+            StartEdgeScroll();
             e.Handled = true;
         }
 

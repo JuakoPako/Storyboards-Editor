@@ -19,6 +19,7 @@ namespace OsuStoryBoardsEditor.Commands
             _type = c.Type;
             _easing = c.Easing;
             _start = c.StartTime;
+
             _end = c.EndTime;
             _startVals = (double[])c.StartValues.Clone();
             _endVals = (double[])c.EndValues.Clone();
@@ -33,6 +34,7 @@ namespace OsuStoryBoardsEditor.Commands
             Ref.EndTime = _end;
             Ref.StartValues = (double[])_startVals.Clone();
             Ref.EndValues = (double[])_endVals.Clone();
+
             Ref.Parameter = _param;
         }
 
@@ -113,6 +115,7 @@ namespace OsuStoryBoardsEditor.Commands
         private readonly SpriteLayer _layer;
         private readonly SpriteOrigin _origin;
         private readonly int _startTime, _endTime;
+        private readonly TextSpec? _text;
         private readonly List<CommandMemento> _commands;
         private readonly List<LoopMemento> _loops;
         private readonly List<TriggerMemento> _triggers;
@@ -124,6 +127,7 @@ namespace OsuStoryBoardsEditor.Commands
             _x = s.X; _y = s.Y; _scale = s.Scale; _rotation = s.Rotation; _opacity = s.Opacity;
             _visible = s.Visible; _layer = s.Layer; _origin = s.Origin;
             _startTime = s.StartTime; _endTime = s.EndTime;
+            _text = s.Text;
             _commands = s.Commands.Select(c => new CommandMemento(c)).ToList();
             _loops = s.Loops.Select(l => new LoopMemento(l)).ToList();
             _triggers = s.Triggers.Select(t => new TriggerMemento(t)).ToList();
@@ -148,6 +152,7 @@ namespace OsuStoryBoardsEditor.Commands
             s.Origin = _origin;
             s.StartTime = _startTime;
             s.EndTime = _endTime;
+            s.Text = _text;
 
             RestoreCommandList(s.Commands, _commands);
 
@@ -171,7 +176,7 @@ namespace OsuStoryBoardsEditor.Commands
             _name == o._name && _filePath == o._filePath &&
             _x == o._x && _y == o._y && _scale == o._scale && _rotation == o._rotation && _opacity == o._opacity &&
             _visible == o._visible && _layer == o._layer && _origin == o._origin &&
-            _startTime == o._startTime && _endTime == o._endTime &&
+            _startTime == o._startTime && _endTime == o._endTime && _text == o._text &&
             SameCommands(_commands, o._commands) &&
             _loops.Count == o._loops.Count && _loops.Zip(o._loops, (a, b) => a.SameAs(b)).All(b => b) &&
             _triggers.Count == o._triggers.Count && _triggers.Zip(o._triggers, (a, b) => a.SameAs(b)).All(b => b);

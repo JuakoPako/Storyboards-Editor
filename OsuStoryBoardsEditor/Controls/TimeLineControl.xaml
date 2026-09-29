@@ -84,7 +84,7 @@
                         <Border DockPanel.Dock="Top" Height="14" Background="{StaticResource BgDeep}"
                 BorderBrush="{StaticResource Border}"
                 BorderThickness="0,0,0,0.5"/>
-
+                        <Border DockPanel.Dock="Bottom" Height="{x:Static SystemParameters.HorizontalScrollBarHeight}"/>
                         <ScrollViewer x:Name="LabelsScrollViewer"
                       VerticalScrollBarVisibility="Hidden"
                       HorizontalScrollBarVisibility="Disabled"
@@ -144,7 +144,7 @@
                 <!-- Canvas de tracks y playhead -->
 
                 <ScrollViewer x:Name="TracksScrollViewer" Grid.Column="1"
-              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Hidden" MinHeight="100"
+              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MinHeight="100"
               ScrollChanged="TracksScrollViewer_ScrollChanged">
                     <Canvas x:Name="TimelineCanvas" MinHeight="200"
         ClipToBounds="True"
