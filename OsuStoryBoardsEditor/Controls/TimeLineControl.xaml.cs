@@ -1376,6 +1376,8 @@ namespace OsuStoryBoardsEditor.Controls
 
             if (fe.DataContext is OsuSprite sprite)
             {
+                if (sprite.IsSpectrum) { e.Handled = true; return; }   // bloqueado para espectros
+
                 if (_expandedSprites.Contains(sprite)) _expandedSprites.Remove(sprite);
                 else _expandedSprites.Add(sprite);
             }

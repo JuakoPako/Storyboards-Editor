@@ -33,6 +33,9 @@ namespace OsuStoryBoardsEditor
         private int _fps = 30;
         private string? _bgPath = null;
 
+        // Mapa de osu! con el que se está trabajando (para exportar directo a su carpeta)
+        private BeatmapSetInfo? _currentMap = null;
+
         private DispatcherTimer? _audioOpenWatchdog;
 
         // ── Cache de bitmaps Skia ─────────────────────────
@@ -797,6 +800,7 @@ namespace OsuStoryBoardsEditor
             if (picker.ShowDialog() != true || picker.SelectedBeatmap == null) return;
 
             var chosen = picker.SelectedBeatmap;
+            _currentMap = chosen;
 
             // Foto del estado anterior para poder deshacer el import completo.
             // (Ya no se liberan los bitmaps ni se limpia el historial: el undo los necesita.)
@@ -870,6 +874,7 @@ namespace OsuStoryBoardsEditor
             if (picker.ShowDialog() != true || picker.SelectedBeatmap == null) return;
 
             var chosen = picker.SelectedBeatmap;
+            _currentMap = chosen;
 
             // Proyecto en blanco: nada de sprites, arrancás de cero como pediste.
             // Foto del estado anterior para poder deshacerlo (los bitmaps se conservan en el cache).
@@ -908,6 +913,7 @@ namespace OsuStoryBoardsEditor
 
             var stateBefore = CaptureProjectState();
             _project.Sprites.Clear();
+            _currentMap = null;   // un proyecto cargado no debe exportar al mapa anterior
 
             _project.AudioPath = data.AudioPath;
             _project.TotalDuration = data.TotalDuration;
@@ -1543,12 +1549,43 @@ namespace OsuStoryBoardsEditor
         private void BtnExport_Click(object sender, RoutedEventArgs e)
         {
             if (_project.Sprites.Count == 0) { MessageBox.Show("No hay sprites.", "Export"); return; }
+
+            // Caso 1: hay un mapa asociado → exporta directo a su carpeta, sin diálogo
+            if (_currentMap != null && Directory.Exists(_currentMap.FolderPath))
+            {
+                string osbName = !string.IsNullOrEmpty(_currentMap.OsbPath)
+                    ? Path.GetFileName(_currentMap.OsbPath)   // mapa que ya tenía .osb: mismo nombre
+                    : SafeFileName($"{_currentMap.Artist} - {_currentMap.Title} ({_currentMap.Creator}).osb");
+
+                string target = Path.Combine(_currentMap.FolderPath, osbName);
+                if (File.Exists(target))
+                {
+                    var r = MessageBox.Show($"Ya existe \"{osbName}\" en la carpeta del mapa.\n¿Sobrescribirlo?",
+                        "Export", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (r != MessageBoxResult.Yes) return;
+                }
+
+                _exportService.Export(_project, _currentMap.FolderPath, osbName);
+                _currentMap.OsbPath = target;
+                MessageBox.Show($"Exportado a:\n{target}", "Export OK");
+                return;
+            }
+
+            // Caso 2: sin mapa asociado → diálogo como antes
             var dlg = new SaveFileDialog { FileName = "storyboard", DefaultExt = ".osb", Filter = "OSB|*.osb" };
             if (dlg.ShowDialog() == true)
             {
-                _exportService.Export(_project, Path.GetDirectoryName(dlg.FileName)!);
+                _exportService.Export(_project, Path.GetDirectoryName(dlg.FileName)!, Path.GetFileName(dlg.FileName));
                 MessageBox.Show("Exportado.", "Export OK");
             }
+        }
+
+        // Quita caracteres que Windows no permite en nombres de archivo
+        private static string SafeFileName(string name)
+        {
+            foreach (var c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c.ToString(), "");
+            return name;
         }
 
         private void SaveProject(string path)

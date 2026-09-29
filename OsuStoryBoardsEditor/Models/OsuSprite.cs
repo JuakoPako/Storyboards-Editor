@@ -11,7 +11,7 @@ namespace OsuStoryBoardsEditor.Models
         TopRight, BottomCentre, BottomLeft, BottomRight, CentreRight
     }
 
-    
+
     // ── Loop de comandos ──────────────────────────────────
     public class OsuSpriteLoop
     {
@@ -66,6 +66,9 @@ namespace OsuStoryBoardsEditor.Models
             get => _name;
             set { _name = value; OnPropertyChanged(); }
         }
+
+        // Las barras del espectro tienen miles de keyframes; no se permite expandirlas en el timeline.
+        public bool IsSpectrum => Name.StartsWith("espectro ", StringComparison.OrdinalIgnoreCase);
         public double X
         {
             get => _x;
