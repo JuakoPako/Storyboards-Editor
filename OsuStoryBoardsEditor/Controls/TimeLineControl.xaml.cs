@@ -321,6 +321,7 @@ namespace OsuStoryBoardsEditor.Controls
             }
 
             TracksCanvas.Height = Math.Max(trackY, 100);
+            TimelineCanvas.Height = 14 + TracksCanvas.Height;
             Dispatcher.InvokeAsync(RefreshTrackLabels, System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
@@ -1585,6 +1586,17 @@ namespace OsuStoryBoardsEditor.Controls
         {
             if (e.VerticalChange != 0)
                 LabelsScrollViewer.ScrollToVerticalOffset(e.VerticalOffset);
+            PinPlayheadToViewport();
+        }
+
+        // Regla y playhead siempre pegados al borde superior visible
+        private void PinPlayheadToViewport()
+        {
+            double v = TracksScrollViewer.VerticalOffset;
+            Canvas.SetTop(RulerCanvas, v);
+            Canvas.SetTop(PlayheadHead, v);
+            Canvas.SetTop(PlayheadLine, v + 10);
+            PlayheadLine.Height = Math.Max(0, TracksScrollViewer.ViewportHeight - 10);
         }
 
         private void LabelsScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)

@@ -156,25 +156,25 @@
                 <ScrollViewer x:Name="TracksScrollViewer" Grid.Column="1"
               HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MinHeight="100"
               ScrollChanged="TracksScrollViewer_ScrollChanged">
-                    <Canvas x:Name="TimelineCanvas" MinHeight="200"
+                    <Canvas x:Name="TimelineCanvas"
         ClipToBounds="True"
         MouseLeftButtonDown="Timeline_MouseDown"
         MouseMove="Timeline_MouseMove"
         MouseLeftButtonUp="Timeline_MouseUp"
         SizeChanged="TimelineCanvas_SizeChanged">
-
                         <Canvas x:Name="RulerCanvas"
-                Canvas.Left="0" Canvas.Top="0"
-                Height="14"/>
+        Canvas.Left="0" Canvas.Top="0"
+        Height="14"
+        Background="{StaticResource BgDeep}" Panel.ZIndex="10"/>
 
                         <Canvas x:Name="TracksCanvas"
-                Canvas.Left="0" Canvas.Top="14"/>
+        Canvas.Left="0" Canvas.Top="14"/>
 
                         <Polygon x:Name="PlayheadHead"
          Points="0,0 16,0 8,12"
          Fill="#E879F9"
-         Canvas.Top="0"
-         Canvas.Left="-8"
+         Canvas.Top="0" Canvas.Left="-8"
+         Panel.ZIndex="11"
          Cursor="SizeWE"/>
 
                         <!-- PlayheadLine -->

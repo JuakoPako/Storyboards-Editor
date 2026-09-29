@@ -78,7 +78,20 @@ namespace OsuStoryBoardsEditor.Services
                     bool hasF = sprite.Commands.Any(c => c.Type == CommandType.F)
          || sprite.Loops.Any(l => l.Commands.Any(c => c.Type == CommandType.F));
                     if (!hasF)
-                        writer.WriteLine($" F,0,{sprite.StartTime},{sprite.EndTime},1,1");
+                        writer.WriteLine($" F,0,{sprite.StartTime},{sprite.EndTime},{sprite.Opacity:F2},{sprite.Opacity:F2}");
+
+                    // Solo cuentan los comandos que realmente se escriben (los de StartTime == EndTime se filtran más abajo)
+                    bool hasS = sprite.Commands.Any(c => c.StartTime != c.EndTime && c.Type is CommandType.S or CommandType.V)
+                             || sprite.Loops.Any(l => l.Commands.Any(c => c.Type is CommandType.S or CommandType.V))
+                             || sprite.Triggers.Any(t => t.Commands.Any(c => c.Type is CommandType.S or CommandType.V));
+                    if (!hasS && sprite.Scale != 1.0)
+                        writer.WriteLine($" S,0,{sprite.StartTime},{sprite.EndTime},{sprite.Scale:F4},{sprite.Scale:F4}");
+
+                    bool hasR = sprite.Commands.Any(c => c.StartTime != c.EndTime && c.Type == CommandType.R)
+                             || sprite.Loops.Any(l => l.Commands.Any(c => c.Type == CommandType.R))
+                             || sprite.Triggers.Any(t => t.Commands.Any(c => c.Type == CommandType.R));
+                    if (!hasR && sprite.Rotation != 0.0)
+                        writer.WriteLine($" R,0,{sprite.StartTime},{sprite.EndTime},{sprite.Rotation:F4},{sprite.Rotation:F4}");
 
                     // Comandos sueltos del sprite (indent nivel 1 = un espacio)
                     foreach (var cmd in sprite.Commands

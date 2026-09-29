@@ -613,7 +613,23 @@ namespace OsuStoryBoardsEditor
                 miGlow.Items.Add(mi);
             }
             miEfectos.Items.Add(miGlow);
+            var miShake = new MenuItem { Header = "Shake..." };
+            miShake.Click += (_, __) => OpenShakeDialog(sprite);
+            miEfectos.Items.Add(miShake);
             menu.Items.Add(miEfectos);
+
+            var miOrden = new MenuItem { Header = sprite.IsSpectrum ? "Orden (todo el espectro)" : "Orden" };
+            foreach (var (label, mv) in new[]
+            {
+    ("Traer al frente", ZMove.ToFront), ("Subir una capa", ZMove.Up),
+    ("Bajar una capa", ZMove.Down),     ("Enviar al fondo", ZMove.ToBack)
+})
+            {
+                var mi = new MenuItem { Header = label };
+                mi.Click += (_, __) => MoveInZOrder(sprite, mv);
+                miOrden.Items.Add(mi);
+            }
+            menu.Items.Add(miOrden);
 
             menu.PlacementTarget = OsuCanvas;
             menu.IsOpen = true;
@@ -654,6 +670,30 @@ namespace OsuStoryBoardsEditor
                     return handle;
 
             return TransformHandle.None;
+        }
+
+        private void OpenShakeDialog(OsuSprite sprite)
+        {
+            var dlg = new ShakeWindow(sprite) { Owner = this };
+            if (dlg.ShowDialog() != true) return;
+
+            // posición/rotación base = donde está el sprite al inicio del rango
+            var st = GetSpriteStateAt(sprite, dlg.Options.RangeStart);
+            var loop = new ShakeService().Generate(st.x, st.y, st.rot, dlg.Options);
+            if (loop == null)
+            {
+                TxtProjectName.Text = "Rango demasiado corto: no se generó el shake";
+                return;
+            }
+
+            using (_undoRedo.BeginTransaction("Shake", sprite))
+            {
+                sprite.Loops.Add(loop);
+            }
+
+            RefreshPropertiesPanel(sprite);
+            OsuCanvas.InvalidateVisual();
+            TxtProjectName.Text = $"Shake generado: {loop.Commands.Count:N0} comandos  (Ctrl+Z para deshacer)";
         }
 
         // ── ProcessFile ───────────────────────────────────
@@ -2019,6 +2059,55 @@ namespace OsuStoryBoardsEditor
             _undoRedo.Record(new AddSpritesCommand(_project, new[] { glow }, "Agregar glow"));
             OnSpriteSelected(glow);
             OsuCanvas.InvalidateVisual();
+        }
+
+        private enum ZMove { ToFront, ToBack, Up, Down }
+
+        private void MoveInZOrder(OsuSprite sprite, ZMove move)
+        {
+            // un sprite del espectro mueve todo el espectro
+            var targets = sprite.IsSpectrum
+                ? _project.Sprites.Where(s => s.IsSpectrum).ToHashSet()
+                : new HashSet<OsuSprite> { sprite };
+
+            var all = _project.Sprites.ToList();
+            var moving = all.Where(targets.Contains).ToList();
+            var rest = all.Where(s => !targets.Contains(s)).ToList();
+            List<OsuSprite> result;
+
+            switch (move)
+            {
+                case ZMove.ToFront: result = rest.Concat(moving).ToList(); break;
+                case ZMove.ToBack: result = moving.Concat(rest).ToList(); break;
+                case ZMove.Up:
+                    result = new List<OsuSprite>(all);
+                    for (int i = result.Count - 2; i >= 0; i--)
+                        if (targets.Contains(result[i]) && !targets.Contains(result[i + 1]))
+                            (result[i], result[i + 1]) = (result[i + 1], result[i]);
+                    break;
+                default:
+                    result = new List<OsuSprite>(all);
+                    for (int i = 1; i < result.Count; i++)
+                        if (targets.Contains(result[i]) && !targets.Contains(result[i - 1]))
+                            (result[i], result[i - 1]) = (result[i - 1], result[i]);
+                    break;
+            }
+
+            if (result.SequenceEqual(all)) return;   // ya estaba arriba/abajo del todo
+
+            var before = CaptureProjectState();
+            var after = before with { Sprites = result };
+            _undoRedo.Execute(new ProjectStateCommand("Cambiar orden de capas", before, after, SetSpriteOrder));
+
+            LayerPanel.SetSelectedSprite(sprite);
+            OsuCanvas.InvalidateVisual();
+            TxtProjectName.Text = "Orden de capas cambiado  (Ctrl+Z para deshacer)";
+        }
+
+        private void SetSpriteOrder(ProjectState s)
+        {
+            _project.Sprites.Clear();
+            foreach (var sp in s.Sprites) _project.Sprites.Add(sp);
         }
 
     }
